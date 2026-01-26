@@ -1,10 +1,3 @@
-//
-//  ScreenshotSorterApp.swift
-//  ScreenshotSorter
-//
-//  Created by Sabtain Khan on 11/22/25.
-//
-
 import SwiftUI
 
 @main

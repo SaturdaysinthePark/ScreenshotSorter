@@ -1,0 +1,11 @@
+test_id,image_description,expected_categories,actual_categories,accuracy_rating,notes
+1,Screenshot of a dog sitting on grass,animals;nature,,,Add what you actually got here
+2,Photo of a sunset over mountains,sunset;mountains;landscapes,,,
+3,Cooking recipe with ingredients,cooking;recipes;food,,,
+4,Person exercising at gym,exercise;people;health,,,
+5,Painting of a landscape,art;landscapes;nature,,,
+6,Beach with palm trees,beaches;nature,,,
+7,Flower garden with roses,flowers;plants;nature,,,
+8,Book on a desk,books;reading,,,
+9,Instagram post of food,instagram;food,,,
+10,iMessage conversation,imessage,,,
