@@ -8,6 +8,7 @@ struct PhotoDetailView: View {
     let initialScreenshot: Screenshot
     let screenshots: [Screenshot]
     let thumbnails: [String: UIImage]
+    let currentCategory: ScreenshotCategory
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -15,11 +16,16 @@ struct PhotoDetailView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var showControls = true
+    @State private var showingDeleteConfirmation = false
+    @State private var showingCategories = false
 
-    init(initialScreenshot: Screenshot, screenshots: [Screenshot], thumbnails: [String: UIImage]) {
+    private let photoService = PhotoLibraryService.shared
+
+    init(initialScreenshot: Screenshot, screenshots: [Screenshot], thumbnails: [String: UIImage], currentCategory: ScreenshotCategory = .all) {
         self.initialScreenshot = initialScreenshot
         self.screenshots = screenshots
         self.thumbnails = thumbnails
+        self.currentCategory = currentCategory
         self._currentIndex = State(initialValue: screenshots.firstIndex(where: { $0.id == initialScreenshot.id }) ?? 0)
     }
 
@@ -87,6 +93,34 @@ struct PhotoDetailView: View {
 
                         Spacer()
 
+                        // Category pill
+                        Button(action: {
+                            HapticManager.shared.lightTap()
+                            showingCategories = true
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: currentCategory.icon)
+                                    .font(.system(size: 12, weight: .medium))
+                                Text(currentCategory.rawValue)
+                                    .font(.system(size: 15, weight: .semibold))
+                                if currentScreenshot.categoriesWithConfidence.count > 1 {
+                                    Text("(\(currentScreenshot.categoriesWithConfidence.count))")
+                                        .font(.system(size: 12))
+                                }
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .frame(height: 44)
+                            .glassEffect(.regular, in: .capsule)
+                        }
+                        .accessibilityLabel("\(currentCategory.rawValue) category, \(currentScreenshot.categoriesWithConfidence.count) categories total")
+                        .accessibilityHint("Double-tap to view all categories")
+
+                        Spacer()
+
                         EnhancedShareButton(
                             screenshot: currentScreenshot,
                             thumbnails: thumbnails
@@ -99,15 +133,35 @@ struct PhotoDetailView: View {
 
                     Spacer()
 
-                    // Bottom counter
-                    Text("\(currentIndex + 1) of \(screenshots.count)")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .glassEffect(.regular, in: .capsule)
-                        .padding(.bottom, 16)
-                        .accessibilityLabel("Photo \(currentIndex + 1) of \(screenshots.count)")
+                    // Bottom bar
+                    HStack(alignment: .bottom) {
+                        // Counter pill
+                        Text("\(currentIndex + 1) of \(screenshots.count)")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .glassEffect(.regular, in: .capsule)
+                            .accessibilityLabel("Photo \(currentIndex + 1) of \(screenshots.count)")
+
+                        Spacer()
+
+                        // Delete button
+                        Button(action: {
+                            HapticManager.shared.lightTap()
+                            showingDeleteConfirmation = true
+                        }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .glassEffect(.regular, in: .circle)
+                        }
+                        .accessibilityLabel("Delete screenshot")
+                        .accessibilityHint("Double-tap to delete this screenshot")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
                 }
                 .transition(.opacity)
             }
@@ -115,6 +169,34 @@ struct PhotoDetailView: View {
         .statusBarHidden(!showControls)
         .persistentSystemOverlays(showControls ? .automatic : .hidden)
         .tooltip(.doubleTapToZoom, text: "Double-tap to zoom in", icon: "hand.tap", position: .bottom)
+        .alert("Delete Screenshot", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteCurrentScreenshot()
+            }
+        } message: {
+            Text("Are you sure you want to delete this screenshot? This cannot be undone.")
+        }
+        .sheet(isPresented: $showingCategories) {
+            DetailCategoriesListView(
+                currentCategory: currentCategory,
+                categoriesWithConfidence: currentScreenshot.categoriesWithConfidence
+            )
+            .presentationDetents([.medium])
+        }
+    }
+
+    // MARK: - Delete
+
+    private func deleteCurrentScreenshot() {
+        photoService.deleteAssets([currentScreenshot.asset]) { success, _ in
+            if success {
+                HapticManager.shared.success()
+                dismiss()
+            } else {
+                HapticManager.shared.error()
+            }
+        }
     }
 }
 
@@ -685,6 +767,80 @@ struct EnhancedShareButton: View {
                 topVC = presented
             }
             topVC.present(activityVC, animated: true)
+        }
+    }
+}
+
+// MARK: - Categories List View
+
+struct DetailCategoriesListView: View {
+    let currentCategory: ScreenshotCategory
+    let categoriesWithConfidence: [CategoryWithConfidence]
+    @Environment(\.dismiss) var dismiss
+
+    private func confidenceColor(_ confidence: ConfidenceLevel) -> Color {
+        switch confidence {
+        case .high: return .green
+        case .medium: return .orange
+        case .low: return .red
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    ForEach(categoriesWithConfidence, id: \.self) { item in
+                        HStack {
+                            Image(systemName: item.category.icon)
+                                .font(.title3)
+                                .foregroundColor(item.category == currentCategory ? .blue : .secondary)
+                                .frame(width: 40)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.category.rawValue)
+                                    .font(.headline)
+                                    .foregroundColor(item.category == currentCategory ? .primary : .secondary)
+
+                                if item.category == currentCategory {
+                                    Text("Current Category")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text(item.confidence.rawValue)
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(confidenceColor(item.confidence).opacity(0.2))
+                                    .foregroundColor(confidenceColor(item.confidence))
+                                    .cornerRadius(6)
+
+                                Text("\(Int(item.score * 100))%")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("All Categories (\(categoriesWithConfidence.count))")
+                }
+            }
+            .navigationTitle("Categories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
