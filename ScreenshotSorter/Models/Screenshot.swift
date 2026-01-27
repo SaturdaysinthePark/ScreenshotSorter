@@ -70,7 +70,7 @@ struct Screenshot: Identifiable, Hashable {
     }
 }
 
-enum ScreenshotCategory: String, CaseIterable {
+enum ScreenshotCategory: String, CaseIterable, Hashable {
     case all = "All Screenshots"
 
     // Core categories

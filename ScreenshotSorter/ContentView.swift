@@ -4,15 +4,16 @@ struct ContentView: View {
     @StateObject private var viewModel = CollectionsViewModel()
     @State private var showSplash = true
     @State private var hasCompletedOnboarding = OnboardingKeys.hasCompletedOnboarding
+    @State private var navigationPath = NavigationPath()
 
     var body: some View {
         ZStack {
             // Main app content
-            NavigationStack {
+            NavigationStack(path: $navigationPath) {
                 if !viewModel.hasPhotoAccess {
                     PhotoAccessView(viewModel: viewModel)
                 } else {
-                    CollectionsView(viewModel: viewModel)
+                    CollectionsView(viewModel: viewModel, navigationPath: $navigationPath)
                 }
             }
 

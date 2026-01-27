@@ -4,15 +4,20 @@ import UIKit
 
 struct CleanGalleryView: View {
     let collection: ScreenshotCollection
+    let allCollections: [ScreenshotCollection]?
+    @Binding var navigationPath: NavigationPath
     @StateObject private var viewModel: CollectionDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedScreenshot: Screenshot?
     @State private var showingSortOptions = false
     @State private var showingDeleteConfirmation = false
     @State private var showingShareSheet = false
+    @State private var showingCollections = false
 
-    init(collection: ScreenshotCollection) {
+    init(collection: ScreenshotCollection, allCollections: [ScreenshotCollection]? = nil, navigationPath: Binding<NavigationPath>) {
         self.collection = collection
+        self.allCollections = allCollections
+        self._navigationPath = navigationPath
         self._viewModel = StateObject(wrappedValue: CollectionDetailViewModel(collection: collection))
     }
 
@@ -60,93 +65,107 @@ struct CleanGalleryView: View {
 
             // Floating glass navigation chrome
             VStack {
-                HStack(alignment: .top) {
-                    // Back button
-                    Button(action: {
-                        HapticManager.shared.lightTap()
-                        dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .glassEffect(.regular, in: .circle)
-                    }
-                    .accessibilityLabel("Back")
-                    .accessibilityHint("Double-tap to go back to collections")
-
-                    Spacer()
-
-                    // Category pill
-                    HStack(spacing: 6) {
-                        Image(systemName: collection.category.icon)
-                            .font(.system(size: 12, weight: .medium))
-                        Text(collection.category.rawValue)
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .frame(height: 44)
-                    .glassEffect(.regular, in: .capsule)
-                    .accessibilityLabel("\(collection.category.rawValue) collection")
-
-                    Spacer()
-
-                    // Menu button
-                    Menu {
-                        Button(action: { showingSortOptions = true }) {
-                            Label("Sort", systemImage: "arrow.up.arrow.down")
-                        }
-
-                        Divider()
-
+                GlassEffectContainer(spacing: 12) {
+                    HStack(alignment: .top) {
+                        // Back button
                         Button(action: {
                             HapticManager.shared.lightTap()
-                            viewModel.isSelectionMode.toggle()
-                            if !viewModel.isSelectionMode {
-                                viewModel.deselectAll()
-                            }
+                            dismiss()
                         }) {
-                            Label(
-                                viewModel.isSelectionMode ? "Cancel Selection" : "Select",
-                                systemImage: viewModel.isSelectionMode ? "xmark.circle" : "checkmark.circle"
-                            )
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(Color(.label))
+                                .frame(width: 36, height: 36)
                         }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.mini)
+                        .accessibilityLabel("Back")
+                        .accessibilityHint("Double-tap to go back to collections")
 
-                        if viewModel.isSelectionMode {
+                        Spacer()
+
+                        // Category pill
+                        Button(action: {
+                            HapticManager.shared.lightTap()
+                            showingCollections = true
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: collection.category.icon)
+                                    .font(.system(size: 12, weight: .medium))
+                                Text(collection.category.rawValue)
+                                    .font(.system(size: 14, weight: .semibold))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundStyle(Color(.label))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.mini)
+                        .accessibilityLabel("\(collection.category.rawValue) collection")
+                        .accessibilityHint("Double-tap to view all collections")
+
+                        Spacer()
+
+                        // Menu button
+                        Menu {
+                            Button(action: { showingSortOptions = true }) {
+                                Label("Sort", systemImage: "arrow.up.arrow.down")
+                            }
+
                             Divider()
 
                             Button(action: {
                                 HapticManager.shared.lightTap()
-                                viewModel.selectAll()
+                                viewModel.isSelectionMode.toggle()
+                                if !viewModel.isSelectionMode {
+                                    viewModel.deselectAll()
+                                }
                             }) {
-                                Label("Select All", systemImage: "checkmark.circle.fill")
+                                Label(
+                                    viewModel.isSelectionMode ? "Cancel Selection" : "Select",
+                                    systemImage: viewModel.isSelectionMode ? "xmark.circle" : "checkmark.circle"
+                                )
                             }
 
-                            Button(action: {
-                                HapticManager.shared.lightTap()
-                                showingShareSheet = true
-                            }) {
-                                Label("Share Selected", systemImage: "square.and.arrow.up")
-                            }
-                            .disabled(viewModel.selectedScreenshots.isEmpty)
+                            if viewModel.isSelectionMode {
+                                Divider()
 
-                            Button(role: .destructive, action: {
-                                showingDeleteConfirmation = true
-                            }) {
-                                Label("Delete Selected", systemImage: "trash")
+                                Button(action: {
+                                    HapticManager.shared.lightTap()
+                                    viewModel.selectAll()
+                                }) {
+                                    Label("Select All", systemImage: "checkmark.circle.fill")
+                                }
+
+                                Button(action: {
+                                    HapticManager.shared.lightTap()
+                                    showingShareSheet = true
+                                }) {
+                                    Label("Share Selected", systemImage: "square.and.arrow.up")
+                                }
+                                .disabled(viewModel.selectedScreenshots.isEmpty)
+
+                                Button(role: .destructive, action: {
+                                    showingDeleteConfirmation = true
+                                }) {
+                                    Label("Delete Selected", systemImage: "trash")
+                                }
+                                .disabled(viewModel.selectedScreenshots.isEmpty)
                             }
-                            .disabled(viewModel.selectedScreenshots.isEmpty)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(Color(.label))
+                                .frame(width: 36, height: 36)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .glassEffect(.regular, in: .circle)
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.mini)
+                        .accessibilityLabel("Gallery options")
                     }
-                    .accessibilityLabel("Gallery options")
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -158,7 +177,7 @@ struct CleanGalleryView: View {
                     HStack(spacing: 16) {
                         Text("\(viewModel.selectedScreenshots.count) selected")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color(.label))
 
                         Spacer()
 
@@ -168,7 +187,7 @@ struct CleanGalleryView: View {
                         }) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color(.label))
                         }
                         .accessibilityLabel("Share \(viewModel.selectedScreenshots.count) selected screenshots")
 
@@ -226,6 +245,59 @@ struct CleanGalleryView: View {
                 currentCategory: collection.category
             )
         }
+        .sheet(isPresented: $showingCollections) {
+            CollectionsPickerView(
+                currentCollection: collection,
+                allCollections: getAllCollections(),
+                onCollectionSelected: { selectedCollection in
+                    showingCollections = false
+                    // Navigate to selected collection programmatically
+                    if selectedCollection.category != collection.category {
+                        // Create a new NavigationPath with just the new category
+                        // This ensures SwiftUI detects the change and recreates the view
+                        Task { @MainActor in
+                            var newPath = NavigationPath()
+                            newPath.append(selectedCollection.category)
+                            // Assign the new path - this should trigger navigation
+                            navigationPath = newPath
+                        }
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
+        }
+    }
+    
+    // Helper to get all collections with counts
+    private func getAllCollections() -> [ScreenshotCollection] {
+        // If we have all collections passed in, use those with real counts
+        if let allCollections = allCollections {
+            // Create a dictionary for quick lookup
+            var collectionsDict: [ScreenshotCategory: ScreenshotCollection] = [:]
+            for coll in allCollections {
+                collectionsDict[coll.category] = coll
+            }
+            
+            // Build result with all categories, using real counts where available
+            var result: [ScreenshotCollection] = []
+            for category in ScreenshotCategory.allCases {
+                if let existingCollection = collectionsDict[category] {
+                    result.append(existingCollection)
+                } else {
+                    // Category doesn't exist in collections, create empty one
+                    result.append(ScreenshotCollection(category: category, screenshots: []))
+                }
+            }
+            return result
+        }
+        
+        // Fallback: only have current collection, create empty ones for others
+        var result: [ScreenshotCollection] = [collection]
+        let existingCategory = collection.category
+        for category in ScreenshotCategory.allCases where category != existingCategory {
+            result.append(ScreenshotCollection(category: category, screenshots: []))
+        }
+        return result
     }
 }
 
@@ -317,4 +389,106 @@ private struct GalleryShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Collections Picker View
+
+struct CollectionsPickerView: View {
+    let currentCollection: ScreenshotCollection
+    let allCollections: [ScreenshotCollection]
+    let onCollectionSelected: (ScreenshotCollection) -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    // Helper to get collection for a category (with count) or create empty one
+    private func collection(for category: ScreenshotCategory) -> ScreenshotCollection {
+        allCollections.first { $0.category == category } 
+            ?? ScreenshotCollection(category: category, screenshots: [])
+    }
+    
+    // Group collections by CategoryGroup
+    private var groupedCollections: [(group: CategoryGroup, collections: [ScreenshotCollection])] {
+        // Get all categories (excluding .all for the picker)
+        let categories = ScreenshotCategory.allCases.filter { $0 != .all }
+        
+        // Create collections for all categories with their counts
+        let collectionsWithCounts = categories.map { category in
+            collection(for: category)
+        }
+        
+        // Group by category group
+        let grouped = Dictionary(grouping: collectionsWithCounts) { $0.category.group }
+        return grouped
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { (group: $0.key, collections: $0.value.sorted { $0.category.rawValue < $1.category.rawValue }) }
+    }
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(groupedCollections, id: \.group) { groupItem in
+                    Section {
+                        ForEach(groupItem.collections) { collection in
+                            Button(action: {
+                                HapticManager.shared.lightTap()
+                                if collection.category != currentCollection.category {
+                                    onCollectionSelected(collection)
+                                    dismiss()
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: collection.category.icon)
+                                        .font(.title3)
+                                        .foregroundColor(collection.category == currentCollection.category ? .blue : .primary)
+                                        .frame(width: 40)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 4) {
+                                            Text(collection.category.rawValue)
+                                                .font(.headline)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text("(\(collection.count))")
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        if collection.category == currentCollection.category {
+                                            Text("Current Collection")
+                                                .font(.caption)
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    if collection.category == currentCollection.category {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    } header: {
+                        HStack(spacing: 6) {
+                            Image(systemName: groupItem.group.icon)
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(groupItem.group.rawValue)
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundStyle(SemanticColor.primary.gradient)
+                    }
+                }
+            }
+            .navigationTitle("Collections")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CollectionsView: View {
     @ObservedObject var viewModel: CollectionsViewModel
+    @Binding var navigationPath: NavigationPath
     @State private var showReviewMode = false
     @State private var showActionsMenu = false
 
@@ -73,7 +74,7 @@ struct CollectionsView: View {
                             }
                             .padding(.horizontal, 16)
 
-                            NavigationLink(destination: CleanGalleryView(collection: viewModel.allScreenshotsCollection).id(ScreenshotCategory.all)) {
+                            NavigationLink(value: ScreenshotCategory.all) {
                                 AllScreenshotsCard(
                                     screenshots: viewModel.allScreenshots,
                                     totalCount: totalScreenshotCount
@@ -89,12 +90,14 @@ struct CollectionsView: View {
                         if viewModel.isGroupedView {
                             GroupedCollectionsView(
                                 collections: viewModel.sortedCollections,
+                                allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
+                                navigationPath: $navigationPath,
                                 columns: columns
                             )
                         } else {
                             LazyVGrid(columns: columns, spacing: 16) {
                                 ForEach(viewModel.sortedCollections) { collection in
-                                    NavigationLink(destination: CleanGalleryView(collection: collection).id(collection.category)) {
+                                    NavigationLink(value: collection.category) {
                                         CollectionCard(collection: collection)
                                     }
                                     .buttonStyle(PlainButtonStyle())
@@ -108,6 +111,32 @@ struct CollectionsView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: ScreenshotCategory.self) { category in
+            // Find the collection for this category
+            if let collection = viewModel.sortedCollections.first(where: { $0.category == category }) {
+                CleanGalleryView(
+                    collection: collection,
+                    allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
+                    navigationPath: $navigationPath
+                )
+                .id(category)
+            } else if category == .all {
+                CleanGalleryView(
+                    collection: viewModel.allScreenshotsCollection,
+                    allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
+                    navigationPath: $navigationPath
+                )
+                .id(category)
+            } else {
+                // Create empty collection for category
+                CleanGalleryView(
+                    collection: ScreenshotCollection(category: category, screenshots: []),
+                    allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
+                    navigationPath: $navigationPath
+                )
+                .id(category)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 12) {
@@ -285,6 +314,8 @@ struct CollectionCard: View {
 
 struct GroupedCollectionsView: View {
     let collections: [ScreenshotCollection]
+    let allCollections: [ScreenshotCollection]
+    @Binding var navigationPath: NavigationPath
     let columns: [GridItem]
 
     var groupedCollections: [(group: CategoryGroup, collections: [ScreenshotCollection])] {
@@ -311,7 +342,7 @@ struct GroupedCollectionsView: View {
                     // Grid
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(item.collections) { collection in
-                            NavigationLink(destination: CleanGalleryView(collection: collection).id(collection.category)) {
+                            NavigationLink(value: collection.category) {
                                 CollectionCard(collection: collection)
                             }
                             .buttonStyle(PlainButtonStyle())
