@@ -30,8 +30,14 @@ class CollectionsViewModel: ObservableObject {
     private let photoService = PhotoLibraryService.shared
     private let categorizationService = CategorizationService.shared
     private let cacheService = CategorizationCacheService.shared
+    private let snapshotService = AppStateSnapshotService.shared
+    private let assetLookupService = PHAssetLookupService.shared
     private var cancellables = Set<AnyCancellable>()
     private var processingTask: Task<Void, Never>?
+
+    // Instant cache restoration
+    @Published var hasRestoredFromCache = false
+    private var cachedLastKnownCount: Int = 0
 
     private let lastProcessedCountKey = "lastProcessedScreenshotCount"
     private let lastUnprocessedBannerDismissedDateKey = "lastUnprocessedBannerDismissedDate"
@@ -107,6 +113,15 @@ class CollectionsViewModel: ObservableObject {
     init() {
         // Initialize with empty collection
         allScreenshotsCollection = ScreenshotCollection(category: .all, screenshots: [])
+
+        // Try instant cache restoration FIRST
+        if restoreFromCacheImmediately() {
+            isLoading = false
+            #if DEBUG
+            print("📸 Instant cache restoration successful!")
+            #endif
+        }
+
         // Check photo access but skip new screenshot check (will be done after splash)
         checkPhotoAccess(skipNewScreenshotCheck: true)
     }
@@ -120,6 +135,114 @@ class CollectionsViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Cache Restoration
+
+    /// Attempt to restore app state from cached snapshot (synchronous, fast)
+    /// Returns true if successful, false if no valid cache exists
+    @discardableResult
+    func restoreFromCacheImmediately() -> Bool {
+        guard let snapshot = snapshotService.loadSnapshot() else {
+            #if DEBUG
+            print("📸 No cached snapshot found")
+            #endif
+            return false
+        }
+
+        // Check if snapshot is still valid
+        if snapshot.isExpired(days: 7) {
+            #if DEBUG
+            print("📸 Cached snapshot expired")
+            #endif
+            return false
+        }
+
+        #if DEBUG
+        print("📸 Restoring from cache with \(snapshot.screenshots.count) screenshots...")
+        #endif
+
+        // Batch fetch all PHAssets for the cached identifiers
+        let identifiers = snapshot.screenshots.map { $0.assetIdentifier }
+        let assetMap = assetLookupService.fetchAssets(identifiers: identifiers)
+
+        // Create Screenshot objects from cached data + fetched assets
+        var screenshots: [Screenshot] = []
+        for cachedData in snapshot.screenshots {
+            guard let asset = assetMap[cachedData.assetIdentifier] else {
+                // Asset no longer exists in Photo Library - skip it
+                continue
+            }
+            let screenshot = Screenshot(cachedData: cachedData, asset: asset)
+            screenshots.append(screenshot)
+        }
+
+        // Sort by creation date (most recent first)
+        screenshots.sort { $0.creationDate > $1.creationDate }
+
+        // Populate state
+        self.allScreenshots = screenshots
+        self.allScreenshotsCollection = ScreenshotCollection(
+            category: .all,
+            screenshots: screenshots
+        )
+
+        // Rebuild collections from processed screenshots
+        self.rebuildCollections(from: screenshots.filter { $0.processingStatus == .processed })
+
+        // Store the last known count for background validation
+        self.cachedLastKnownCount = snapshot.lastKnownCount
+
+        // Check for unreviewed photos
+        self.checkForUnreviewedScreenshotsProgressive()
+
+        self.hasRestoredFromCache = true
+        #if DEBUG
+        print("📸 Cache restoration complete: \(screenshots.count) screenshots restored")
+        #endif
+        return true
+    }
+
+    /// Validate the cached state against current Photo Library (runs in background)
+    func validateCacheInBackground() async {
+        guard hasRestoredFromCache else { return }
+
+        #if DEBUG
+        print("📸 Validating cache in background...")
+        #endif
+
+        // Quick count check (efficient query)
+        let currentCount = assetLookupService.fetchScreenshotCount()
+
+        if currentCount == cachedLastKnownCount {
+            // No changes detected - cache is valid
+            #if DEBUG
+            print("📸 Cache validated: count matches (\(currentCount))")
+            #endif
+            return
+        } else if currentCount > cachedLastKnownCount {
+            // New screenshots added
+            let newCount = currentCount - cachedLastKnownCount
+            #if DEBUG
+            print("📸 New screenshots detected during validation: \(newCount)")
+            #endif
+            self.newScreenshotCount = newCount
+            self.hasNewScreenshots = true
+        } else {
+            // Screenshots deleted - reconcile
+            #if DEBUG
+            print("📸 Screenshots deleted: was \(cachedLastKnownCount), now \(currentCount)")
+            #endif
+            // Trigger full refresh to reconcile
+            self.hasNewScreenshots = true
+            self.newScreenshotCount = currentCount
+        }
+    }
+
+    /// Save current state to snapshot (call when app goes to background)
+    func saveStateSnapshot() {
+        guard !allScreenshots.isEmpty else { return }
+        snapshotService.saveSnapshot(screenshots: allScreenshots)
+    }
+
     func checkForNewScreenshots() {
         isLoading = true
 
@@ -130,25 +253,35 @@ class CollectionsViewModel: ObservableObject {
                 let currentCount = assets.count
                 let lastCount = UserDefaults.standard.integer(forKey: self.lastProcessedCountKey)
 
+                #if DEBUG
                 print("📸 checkForNewScreenshots - Current: \(currentCount), Last: \(lastCount)")
+                #endif
 
                 if lastCount == 0 {
                     // First time - process all
+                    #if DEBUG
                     print("📸 First time - loading screenshots")
+                    #endif
                     self.loadScreenshots()
                 } else if currentCount > lastCount {
                     // New screenshots detected
+                    #if DEBUG
                     print("📸 New screenshots detected: \(currentCount - lastCount)")
+                    #endif
                     self.newScreenshotCount = currentCount - lastCount
                     self.hasNewScreenshots = true
                     self.isLoading = false
                 } else if currentCount == lastCount {
                     // No changes - load photos but skip processing
+                    #if DEBUG
                     print("📸 No changes detected - loading photos without processing")
+                    #endif
                     self.loadPhotosOnly(assets, shouldStopLoading: true)
                 } else {
                     // Count decreased (screenshots deleted) - show alert to reprocess
+                    #if DEBUG
                     print("📸 Screenshots deleted - new count: \(currentCount)")
+                    #endif
                     self.newScreenshotCount = currentCount
                     self.hasNewScreenshots = true
                     self.isLoading = false
@@ -228,7 +361,9 @@ class CollectionsViewModel: ObservableObject {
     }
 
     func loadPhotosOnly(_ assets: [PHAsset], shouldStopLoading: Bool = false) {
+        #if DEBUG
         print("📸 loadPhotosOnly() called - loading \(assets.count) photos and restoring from cache")
+        #endif
 
         Task { @MainActor in
             var cachedCount = 0
@@ -263,7 +398,9 @@ class CollectionsViewModel: ObservableObject {
             // Rebuild collections from cached screenshots
             self.rebuildCollections(from: screenshots.filter { $0.processingStatus == .processed })
 
+            #if DEBUG
             print("📸 Restored \(cachedCount) from cache, \(uncachedCount) need processing")
+            #endif
 
             // Check for unprocessed photos and trigger alert/banner
             self.checkForUnprocessedPhotos()
@@ -275,6 +412,9 @@ class CollectionsViewModel: ObservableObject {
             if shouldStopLoading {
                 self.isLoading = false
             }
+
+            // Save state snapshot for instant restoration on next launch
+            self.saveStateSnapshot()
         }
     }
 
@@ -287,7 +427,9 @@ class CollectionsViewModel: ObservableObject {
         unprocessedPhotoCount = unprocessedScreenshots.count
 
         if unprocessedPhotoCount > 0 {
+            #if DEBUG
             print("📸 Found \(unprocessedPhotoCount) unprocessed photos")
+            #endif
 
             // Check if banner was recently dismissed
             let lastDismissedDate = UserDefaults.standard.object(
@@ -313,7 +455,9 @@ class CollectionsViewModel: ObservableObject {
     }
 
     func processUnprocessedOnly() {
+        #if DEBUG
         print("📸 processUnprocessedOnly() called")
+        #endif
 
         // Cancel any existing processing task
         processingTask?.cancel()
@@ -324,7 +468,9 @@ class CollectionsViewModel: ObservableObject {
         }
 
         guard !unprocessedScreenshots.isEmpty else {
+            #if DEBUG
             print("⚠️ No unprocessed screenshots to process")
+            #endif
             return
         }
 
@@ -345,7 +491,9 @@ class CollectionsViewModel: ObservableObject {
 
             // Only update state if task wasn't cancelled
             guard !Task.isCancelled else {
+                #if DEBUG
                 print("⚠️ Processing task was cancelled")
+                #endif
                 return
             }
 
@@ -364,11 +512,16 @@ class CollectionsViewModel: ObservableObject {
             self.hasUnprocessedPhotos = false
             self.showUnprocessedBanner = false
             self.unprocessedPhotoCount = 0
+
+            // Save state snapshot for instant restoration on next launch
+            self.saveStateSnapshot()
         }
     }
 
     func loadScreenshots() {
+        #if DEBUG
         print("📸 loadScreenshots() called")
+        #endif
 
         // Cancel any existing processing task
         processingTask?.cancel()
@@ -382,7 +535,9 @@ class CollectionsViewModel: ObservableObject {
         photoService.fetchScreenshots { [weak self] assets in
             guard let self = self else { return }
 
+            #if DEBUG
             print("📸 Fetched \(assets.count) screenshots")
+            #endif
 
             self.processingTask = Task { @MainActor in
                 // IMMEDIATE DISPLAY: Create unprocessed screenshots
@@ -392,7 +547,9 @@ class CollectionsViewModel: ObservableObject {
                     return screenshot
                 }.sorted { $0.creationDate > $1.creationDate }
 
+                #if DEBUG
                 print("📸 Created \(unprocessedScreenshots.count) unprocessed screenshots")
+                #endif
 
                 // Populate immediately - ALL PHOTOS NOW VISIBLE
                 self.allScreenshots = unprocessedScreenshots
@@ -401,7 +558,9 @@ class CollectionsViewModel: ObservableObject {
                     screenshots: unprocessedScreenshots
                 )
 
+                #if DEBUG
                 print("📸 allScreenshots count: \(self.allScreenshots.count)")
+                #endif
 
                 // Update UI state
                 self.totalToProcess = assets.count
@@ -413,7 +572,9 @@ class CollectionsViewModel: ObservableObject {
 
                 // Only update state if task wasn't cancelled
                 guard !Task.isCancelled else {
+                    #if DEBUG
                     print("⚠️ Processing task was cancelled")
+                    #endif
                     return
                 }
 
@@ -423,6 +584,9 @@ class CollectionsViewModel: ObservableObject {
 
                 // Save the count for new screenshot detection
                 UserDefaults.standard.set(assets.count, forKey: self.lastProcessedCountKey)
+
+                // Save state snapshot for instant restoration on next launch
+                self.saveStateSnapshot()
             }
         }
     }
@@ -439,7 +603,9 @@ class CollectionsViewModel: ObservableObject {
         for batch in stride(from: 0, to: assets.count, by: batchSize) {
             // Check if task was cancelled
             guard !Task.isCancelled else {
+                #if DEBUG
                 print("⚠️ Processing cancelled at \(processedCount)/\(assets.count)")
+                #endif
                 return
             }
 
@@ -541,7 +707,9 @@ class CollectionsViewModel: ObservableObject {
 
         // Check cache first
         if let cachedCategories = cacheService.getCachedCategories(for: assetId) {
+            #if DEBUG
             print("📦 Using cached categories for asset: \(assetId)")
+            #endif
             let categoriesWithConfidence = cachedCategories.map {
                 CategoryWithConfidence(category: $0, confidence: .high, score: 0.8)
             }
@@ -559,7 +727,9 @@ class CollectionsViewModel: ObservableObject {
 
             return Screenshot(asset: asset, categoriesWithConfidence: categoriesWithConfidence)
         } catch {
+            #if DEBUG
             print("❌ Failed to categorize asset \(assetId): \(error.localizedDescription)")
+            #endif
             // Return with .other category on failure
             return Screenshot(asset: asset, categoriesWithConfidence: [CategoryWithConfidence(category: .other, confidence: .medium, score: 0.5)])
         }
@@ -589,7 +759,9 @@ class CollectionsViewModel: ObservableObject {
     // MARK: - Cache Restoration
 
     private func rebuildCollections(from screenshots: [Screenshot]) {
+        #if DEBUG
         print("🔄 Rebuilding collections from \(screenshots.count) cached screenshots")
+        #endif
 
         var collectionDict: [ScreenshotCategory: [Screenshot]] = [:]
 
@@ -607,7 +779,9 @@ class CollectionsViewModel: ObservableObject {
             ScreenshotCollection(category: category, screenshots: screenshots)
         }
 
+        #if DEBUG
         print("📊 Rebuilt \(self.collections.count) collections from cache")
+        #endif
     }
 
     func checkForUnreviewedScreenshots() {

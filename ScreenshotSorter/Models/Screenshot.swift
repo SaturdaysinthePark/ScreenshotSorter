@@ -61,6 +61,23 @@ struct Screenshot: Identifiable, Hashable {
         self.creationDate = asset.creationDate ?? Date()
     }
 
+    /// Initialize from cached snapshot data with a pre-fetched PHAsset
+    init(cachedData: CachedScreenshotData, asset: PHAsset) {
+        self.id = cachedData.assetIdentifier
+        self.asset = asset
+        self.categories = cachedData.categories
+        self.categoriesWithConfidence = cachedData.categoriesWithConfidence.map {
+            CategoryWithConfidence(
+                category: $0.category,
+                confidence: ConfidenceLevel(score: $0.score),
+                score: $0.score
+            )
+        }
+        self.creationDate = cachedData.creationDate
+        self.isReviewed = cachedData.isReviewed
+        self.processingStatus = cachedData.isProcessed ? .processed : .unprocessed
+    }
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }

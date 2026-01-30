@@ -26,10 +26,14 @@ class PhotoLibraryService: ObservableObject {
     func fetchScreenshots(completion: @escaping ([PHAsset]) -> Void) {
         // Always check current authorization status
         let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        #if DEBUG
         print("📸 PhotoLibraryService.fetchScreenshots() - Authorization: \(currentStatus.rawValue)")
+        #endif
 
         guard currentStatus == .authorized || currentStatus == .limited else {
+            #if DEBUG
             print("📸 Authorization denied, returning empty array")
+            #endif
             completion([])
             return
         }
@@ -46,7 +50,9 @@ class PhotoLibraryService: ObservableObject {
                 screenshots.append(asset)
             }
 
+            #if DEBUG
             print("📸 PhotoLibraryService found \(screenshots.count) screenshots")
+            #endif
 
             DispatchQueue.main.async {
                 completion(screenshots)
@@ -102,7 +108,9 @@ class PhotoLibraryService: ObservableObject {
                 for assetId in assetIds {
                     cacheService.removeCachedCategories(for: assetId)
                 }
+                #if DEBUG
                 print("🗑️ Cleaned up cache for \(assetIds.count) deleted assets")
+                #endif
             }
 
             DispatchQueue.main.async {
@@ -131,7 +139,9 @@ class PhotoLibraryService: ObservableObject {
 
                 if !hasResumed {
                     hasResumed = true
+                    #if DEBUG
                     print("⏱️ Image load timeout for asset: \(asset.localIdentifier)")
+                    #endif
                     continuation.resume(throwing: PhotoLibraryError.timeout)
                 }
             }

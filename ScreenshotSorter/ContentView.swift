@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel = CollectionsViewModel()
+    @ObservedObject var viewModel: CollectionsViewModel
     @State private var showSplash = true
     @State private var hasCompletedOnboarding = OnboardingKeys.hasCompletedOnboarding
     @State private var navigationPath = NavigationPath()
@@ -32,13 +32,29 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                withAnimation(.easeOut(duration: 0.5)) {
-                    showSplash = false
+            if viewModel.hasRestoredFromCache {
+                // Cache was restored in init - dismiss splash quickly
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        showSplash = false
+                    }
+                    // Validate cache in background (non-blocking)
+                    if viewModel.hasPhotoAccess && hasCompletedOnboarding {
+                        Task {
+                            await viewModel.validateCacheInBackground()
+                        }
+                    }
                 }
-                // Check for new screenshots after splash (only if onboarding is done)
-                if viewModel.hasPhotoAccess && hasCompletedOnboarding {
-                    viewModel.checkForNewScreenshots()
+            } else {
+                // No cache - use existing flow with full splash
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    withAnimation(.easeOut(duration: 0.5)) {
+                        showSplash = false
+                    }
+                    // Check for new screenshots after splash (only if onboarding is done)
+                    if viewModel.hasPhotoAccess && hasCompletedOnboarding {
+                        viewModel.checkForNewScreenshots()
+                    }
                 }
             }
         }

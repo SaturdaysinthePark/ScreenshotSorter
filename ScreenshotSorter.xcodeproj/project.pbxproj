@@ -400,8 +400,8 @@
 				DEVELOPMENT_TEAM = 3J4ANN2GYH;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "We need access to your photos to organize and categorize your screenshots.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need permission to delete screenshots from your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "What the Screen? needs permission to help you manage screenshots, including the ability to delete ones you no longer need. All processing happens privately on your device.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "What the Screen? needs access to your photo library to find, organize, and help you review screenshots using on-device AI. Your photos never leave your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -430,8 +430,8 @@
 				DEVELOPMENT_TEAM = 3J4ANN2GYH;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "We need access to your photos to organize and categorize your screenshots.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need permission to delete screenshots from your photo library.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "What the Screen? needs permission to help you manage screenshots, including the ability to delete ones you no longer need. All processing happens privately on your device.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "What the Screen? needs access to your photo library to find, organize, and help you review screenshots using on-device AI. Your photos never leave your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

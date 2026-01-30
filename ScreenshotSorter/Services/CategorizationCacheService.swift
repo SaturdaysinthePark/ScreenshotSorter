@@ -20,17 +20,23 @@ class CategorizationCacheService {
 
         // Check if expired
         if cached.isExpired(days: expirationDays) {
+            #if DEBUG
             print("⏰ Cache expired for asset: \(assetIdentifier)")
+            #endif
             return nil
         }
 
         // Check version compatibility
         if cached.version != cacheVersion {
+            #if DEBUG
             print("⚠️ Cache version mismatch for asset: \(assetIdentifier)")
+            #endif
             return nil
         }
 
+        #if DEBUG
         print("✅ Cache hit for asset: \(assetIdentifier) - \(cached.categories.map { $0.rawValue })")
+        #endif
         return cached.categories
     }
 
@@ -48,7 +54,9 @@ class CategorizationCacheService {
         cache[assetIdentifier] = cached
         saveCache(cache)
 
+        #if DEBUG
         print("💾 Saved to cache: \(assetIdentifier) - \(categories.map { $0.rawValue })")
+        #endif
     }
 
     /// Remove cached categories for a specific screenshot
@@ -56,13 +64,17 @@ class CategorizationCacheService {
         var cache = loadCache() ?? [:]
         cache.removeValue(forKey: assetIdentifier)
         saveCache(cache)
+        #if DEBUG
         print("🗑️ Removed from cache: \(assetIdentifier)")
+        #endif
     }
 
     /// Clear all cached categories
     func clearAllCache() {
         userDefaults.removeObject(forKey: cacheKey)
+        #if DEBUG
         print("🗑️ Cleared entire cache")
+        #endif
     }
 
     /// Get cache statistics
@@ -88,7 +100,9 @@ class CategorizationCacheService {
 
         if beforeCount != afterCount {
             saveCache(cache)
+            #if DEBUG
             print("🧹 Cleaned up \(beforeCount - afterCount) expired cache entries")
+            #endif
         }
     }
 
@@ -103,7 +117,9 @@ class CategorizationCacheService {
             let cache = try decoder.decode([String: CachedCategorization].self, from: data)
             return cache
         } catch {
+            #if DEBUG
             print("❌ Failed to decode cache: \(error)")
+            #endif
             return nil
         }
     }
@@ -114,9 +130,13 @@ class CategorizationCacheService {
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(cache)
             userDefaults.set(data, forKey: cacheKey)
+            #if DEBUG
             print("💾 Cache saved with \(cache.count) entries")
+            #endif
         } catch {
+            #if DEBUG
             print("❌ Failed to encode cache: \(error)")
+            #endif
         }
     }
 }

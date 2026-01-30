@@ -106,7 +106,8 @@ struct ScreenshotReviewView: View {
             handleKeyboardKeep()
             return .handled
         }
-        .onKeyPress(characters: .init(charactersIn: "z"), modifiers: .command) { _ in
+        .onKeyPress(characters: .init(charactersIn: "z")) { keyPress in
+            guard keyPress.modifiers.contains(.command) else { return .ignored }
             handleUndo()
             return .handled
         }
@@ -474,14 +475,14 @@ struct SwipeEdgeIndicators: View {
 
     private var leftIndicatorOpacity: Double {
         if offset.width < 0 {
-            return min(abs(offset.width) / 150, 1.0)
+            return min(abs(offset.width) / 150.0, 1.0)
         }
         return showHints ? hintOpacity * 0.3 : 0
     }
 
     private var rightIndicatorOpacity: Double {
         if offset.width > 0 {
-            return min(offset.width / 150, 1.0)
+            return min(offset.width / 150.0, 1.0)
         }
         return showHints ? hintOpacity * 0.3 : 0
     }
@@ -539,22 +540,22 @@ struct SwipeActionOverlay: View {
     var body: some View {
         ZStack {
             if offset.width < -50 {
-                Color.red.opacity(Double(abs(offset.width) / 300))
+                Color.red.opacity(abs(offset.width) / 300.0)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .overlay {
                         Image(systemName: "trash.fill")
                             .font(.system(size: 60))
                             .foregroundColor(.white)
-                            .opacity(min(abs(offset.width) / 150, 1.0))
+                            .opacity(min(abs(offset.width) / 150.0, 1.0))
                     }
             } else if offset.width > 50 {
-                Color.green.opacity(Double(offset.width / 300))
+                Color.green.opacity(offset.width / 300.0)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .overlay {
                         Image(systemName: "checkmark")
                             .font(.system(size: 60, weight: .bold))
                             .foregroundColor(.white)
-                            .opacity(min(offset.width / 150, 1.0))
+                            .opacity(min(offset.width / 150.0, 1.0))
                     }
             }
         }

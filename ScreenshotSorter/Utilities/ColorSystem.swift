@@ -84,7 +84,7 @@ struct PrimaryCardModifier: ViewModifier {
 struct SecondaryCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .glassEffect(.thin, in: .rect(cornerRadius: 12))
+            .glassEffect(.regular, in: .rect(cornerRadius: 12))
     }
 }
 

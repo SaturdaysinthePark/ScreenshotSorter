@@ -71,97 +71,100 @@ struct PhotoDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .ignoresSafeArea()
             .offset(y: dragOffset)
 
-            // Controls overlay
+            // Controls overlay (iOS Photos style: opaque material buttons)
             if showControls {
                 VStack {
                     // Top bar
-                    HStack {
-                        Button(action: {
-                            HapticManager.shared.lightTap()
-                            dismiss()
-                        }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .glassEffect(.regular, in: .circle)
-                        }
-                        .accessibilityLabel("Close photo viewer")
-                        .accessibilityHint("Double-tap to close")
-
-                        Spacer()
-
-                        // Category pill
-                        Button(action: {
-                            HapticManager.shared.lightTap()
-                            showingCategories = true
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: currentCategory.icon)
-                                    .font(.system(size: 12, weight: .medium))
-                                Text(currentCategory.rawValue)
-                                    .font(.system(size: 15, weight: .semibold))
-                                if currentScreenshot.categoriesWithConfidence.count > 1 {
-                                    Text("(\(currentScreenshot.categoriesWithConfidence.count))")
-                                        .font(.system(size: 12))
-                                }
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 10, weight: .semibold))
+                    GlassEffectContainer(spacing: 12) {
+                        HStack {
+                            Button(action: {
+                                HapticManager.shared.lightTap()
+                                dismiss()
+                            }) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(Color(.label))
+                                    .frame(width: 36, height: 36)
                             }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .frame(height: 44)
-                            .glassEffect(.regular, in: .capsule)
+                            .buttonStyle(.glass)
+                            .buttonBorderShape(.circle)
+                            .controlSize(.mini)
+                            .accessibilityLabel("Back")
+                            .accessibilityHint("Double-tap to close")
+
+                            Spacer()
+
+                            // Category pill
+                            Button(action: {
+                                HapticManager.shared.lightTap()
+                                showingCategories = true
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: currentCategory.icon)
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text(currentCategory.rawValue)
+                                        .font(.system(size: 14, weight: .semibold))
+                                    if currentScreenshot.categoriesWithConfidence.count > 1 {
+                                        Text("(\(currentScreenshot.categoriesWithConfidence.count))")
+                                            .font(.system(size: 11))
+                                    }
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 10, weight: .semibold))
+                                }
+                                .foregroundStyle(Color(.label))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.mini)
+                            .accessibilityLabel("\(currentCategory.rawValue) category, \(currentScreenshot.categoriesWithConfidence.count) categories total")
+                            .accessibilityHint("Double-tap to view all categories")
+
+                            Spacer()
+
+                            // Menu button (matches iOS Photos ··· style)
+                            Menu {
+                                Button(action: {
+                                    shareCurrentPhoto()
+                                }) {
+                                    Label("Share", systemImage: "square.and.arrow.up")
+                                }
+                                Button(role: .destructive, action: {
+                                    showingDeleteConfirmation = true
+                                }) {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(Color(.label))
+                                    .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.glass)
+                            .buttonBorderShape(.circle)
+                            .controlSize(.mini)
+                            .accessibilityLabel("More options")
                         }
-                        .accessibilityLabel("\(currentCategory.rawValue) category, \(currentScreenshot.categoriesWithConfidence.count) categories total")
-                        .accessibilityHint("Double-tap to view all categories")
-
-                        Spacer()
-
-                        EnhancedShareButton(
-                            screenshot: currentScreenshot,
-                            thumbnails: thumbnails
-                        )
-                        .frame(width: 44, height: 44)
-                        .glassEffect(.regular, in: .circle)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
 
                     Spacer()
 
-                    // Bottom bar
-                    HStack(alignment: .bottom) {
-                        // Counter pill
+                    // Bottom counter
+                    if screenshots.count > 1 {
                         Text("\(currentIndex + 1) of \(screenshots.count)")
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
+                            .foregroundStyle(Color(.label))
                             .padding(.vertical, 8)
                             .padding(.horizontal, 16)
                             .glassEffect(.regular, in: .capsule)
+                            .padding(.bottom, 16)
                             .accessibilityLabel("Photo \(currentIndex + 1) of \(screenshots.count)")
-
-                        Spacer()
-
-                        // Delete button
-                        Button(action: {
-                            HapticManager.shared.lightTap()
-                            showingDeleteConfirmation = true
-                        }) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .glassEffect(.regular, in: .circle)
-                        }
-                        .accessibilityLabel("Delete screenshot")
-                        .accessibilityHint("Double-tap to delete this screenshot")
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
                 }
                 .transition(.opacity)
             }
@@ -183,6 +186,28 @@ struct PhotoDetailView: View {
                 categoriesWithConfidence: currentScreenshot.categoriesWithConfidence
             )
             .presentationDetents([.medium])
+        }
+    }
+
+    // MARK: - Share
+
+    private func shareCurrentPhoto() {
+        HapticManager.shared.lightTap()
+        photoService.loadFullSizeImage(for: currentScreenshot.asset) { image in
+            let shareImage = image ?? thumbnails[currentScreenshot.id]
+            guard let shareImage else { return }
+            let activityVC = UIActivityViewController(
+                activityItems: [shareImage],
+                applicationActivities: nil
+            )
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = scene.windows.first?.rootViewController {
+                var topVC = rootVC
+                while let presented = topVC.presentedViewController {
+                    topVC = presented
+                }
+                topVC.present(activityVC, animated: true)
+            }
         }
     }
 
@@ -248,31 +273,15 @@ struct ZoomablePhotoView: View {
                 }
                 // Image content
                 else if fullImage != nil || thumbnail != nil {
-                    if isZoomed {
-                        imageContent(in: geometry)
-                            .gesture(
-                                SimultaneousGesture(
-                                    magnificationGesture(in: geometry),
-                                    panGesture(in: geometry)
-                                )
-                            )
-                            .onTapGesture(count: 2) {
-                                doubleTapZoom(in: geometry)
-                            }
-                            .onTapGesture(count: 1) {
-                                handleSingleTap(in: geometry)
-                            }
-                    } else {
-                        imageContent(in: geometry)
-                            .simultaneousGesture(magnificationGesture(in: geometry))
-                            .simultaneousGesture(dismissGesture())
-                            .onTapGesture(count: 2) {
-                                doubleTapZoom(in: geometry)
-                            }
-                            .onTapGesture(count: 1) {
-                                handleSingleTap(in: geometry)
-                            }
-                    }
+                    imageContent(in: geometry)
+                        .gesture(magnificationGesture(in: geometry))
+                        .simultaneousGesture(unifiedDragGesture(in: geometry))
+                        .onTapGesture(count: 2) {
+                            doubleTapZoom(in: geometry)
+                        }
+                        .onTapGesture(count: 1) {
+                            handleSingleTap(in: geometry)
+                        }
                 } else {
                     // No image at all, loading
                     ProgressView()
@@ -287,7 +296,7 @@ struct ZoomablePhotoView: View {
                         Spacer()
                         Text("\(zoomPercentage)%")
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundStyle(Color(.label))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .glassEffect(.regular, in: .capsule)
@@ -403,73 +412,109 @@ struct ZoomablePhotoView: View {
             }
     }
 
-    private func panGesture(in geometry: GeometryProxy) -> some Gesture {
-        DragGesture()
-            .onChanged { value in
-                let newOffset = CGSize(
-                    width: lastOffset.width + value.translation.width,
-                    height: lastOffset.height + value.translation.height
-                )
-                let constrained = constrainOffset(newOffset, in: geometry)
-                offset = constrained
-
-                // Haptic at pan boundaries
-                if constrained.width != newOffset.width || constrained.height != newOffset.height {
-                    HapticManager.shared.panBoundary()
-                }
-            }
-            .onEnded { _ in
-                lastOffset = offset
-            }
-    }
-
-    private func dismissGesture() -> some Gesture {
+    private func unifiedDragGesture(in geometry: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 20)
             .onChanged { value in
-                // Only respond to primarily vertical drags
-                guard abs(value.translation.height) > abs(value.translation.width) else { return }
-                dragOffset = value.translation.height
-                onDragChanged(dragOffset)
+                if isZoomed {
+                    // Pan the image
+                    let newOffset = CGSize(
+                        width: lastOffset.width + value.translation.width,
+                        height: lastOffset.height + value.translation.height
+                    )
+                    let constrained = constrainOffset(newOffset, in: geometry)
+                    offset = constrained
+
+                    // Haptic at pan boundaries
+                    if constrained.width != newOffset.width || constrained.height != newOffset.height {
+                        HapticManager.shared.panBoundary()
+                    }
+                } else {
+                    // Dismiss gesture — only respond to primarily vertical drags
+                    // Require at least 2:1 ratio of vertical to horizontal movement
+                    let verticalMovement = abs(value.translation.height)
+                    let horizontalMovement = abs(value.translation.width)
+                    guard verticalMovement > horizontalMovement * 1.5 else { return }
+                    dragOffset = value.translation.height
+                    onDragChanged(dragOffset)
+                }
             }
             .onEnded { value in
-                // Only process if the gesture was primarily vertical
-                guard abs(value.translation.height) > abs(value.translation.width) else {
-                    if dragOffset != 0 {
+                if isZoomed {
+                    lastOffset = offset
+                } else {
+                    // Only process if the gesture was primarily vertical (2:1 ratio)
+                    let verticalMovement = abs(value.translation.height)
+                    let horizontalMovement = abs(value.translation.width)
+                    guard verticalMovement > horizontalMovement * 1.5 else {
+                        if dragOffset != 0 {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                dragOffset = 0
+                                onDragChanged(0)
+                            }
+                        }
+                        return
+                    }
+
+                    let velocity = value.predictedEndTranslation.height - value.translation.height
+                    let shouldDismiss = abs(dragOffset) > 100 || abs(velocity) > 500
+
+                    if shouldDismiss {
+                        HapticManager.shared.lightTap()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            dragOffset = dragOffset > 0 ? 400 : -400
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            onDismiss()
+                        }
+                    } else {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                             dragOffset = 0
                             onDragChanged(0)
                         }
                     }
-                    return
-                }
-
-                let velocity = value.predictedEndTranslation.height - value.translation.height
-                let shouldDismiss = abs(dragOffset) > 100 || abs(velocity) > 500
-
-                if shouldDismiss {
-                    HapticManager.shared.lightTap()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        dragOffset = dragOffset > 0 ? 400 : -400
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        onDismiss()
-                    }
-                } else {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                        dragOffset = 0
-                        onDragChanged(0)
-                    }
                 }
             }
     }
 
-    private func constrainOffset(_ offset: CGSize, in geometry: GeometryProxy) -> CGSize {
-        let imageSize = geometry.size
-        let scaledWidth = imageSize.width * scale
-        let scaledHeight = imageSize.height * scale
+    private func fittedImageSize(in containerSize: CGSize) -> CGSize {
+        let imageWidth: CGFloat
+        let imageHeight: CGFloat
+        if let image = fullImage ?? thumbnail {
+            imageWidth = image.size.width
+            imageHeight = image.size.height
+        } else {
+            imageWidth = CGFloat(screenshot.asset.pixelWidth)
+            imageHeight = CGFloat(screenshot.asset.pixelHeight)
+        }
 
-        let maxOffsetX = max(0, (scaledWidth - imageSize.width) / 2)
-        let maxOffsetY = max(0, (scaledHeight - imageSize.height) / 2)
+        guard imageWidth > 0 && imageHeight > 0 && containerSize.width > 0 && containerSize.height > 0 else {
+            return containerSize
+        }
+
+        let imageAspectRatio = imageWidth / imageHeight
+        let containerAspectRatio = containerSize.width / containerSize.height
+
+        if imageAspectRatio > containerAspectRatio {
+            // Width-constrained (landscape or wide image)
+            let fittedWidth = containerSize.width
+            let fittedHeight = fittedWidth / imageAspectRatio
+            return CGSize(width: fittedWidth, height: fittedHeight)
+        } else {
+            // Height-constrained (portrait or tall image)
+            let fittedHeight = containerSize.height
+            let fittedWidth = fittedHeight * imageAspectRatio
+            return CGSize(width: fittedWidth, height: fittedHeight)
+        }
+    }
+
+    private func constrainOffset(_ offset: CGSize, in geometry: GeometryProxy) -> CGSize {
+        let containerSize = geometry.size
+        let fitted = fittedImageSize(in: containerSize)
+        let scaledWidth = fitted.width * scale
+        let scaledHeight = fitted.height * scale
+
+        let maxOffsetX = max(0, (scaledWidth - containerSize.width) / 2)
+        let maxOffsetY = max(0, (scaledHeight - containerSize.height) / 2)
 
         return CGSize(
             width: min(max(offset.width, -maxOffsetX), maxOffsetX),
@@ -480,43 +525,22 @@ struct ZoomablePhotoView: View {
     // MARK: - Tap Handling
 
     private func handleSingleTap(in geometry: GeometryProxy) {
-        if !imageNaturallyFillsWidth(in: geometry) && !isZoomed && !isFitToWidthZoomed {
-            // Image doesn't fill width at default zoom — zoom to fit width
-            let targetScale = calculateFitToWidthScale(in: geometry)
-            HapticManager.shared.lightTap()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                scale = targetScale
-                offset = .zero
-                lastOffset = .zero
-            }
-            isFitToWidthZoomed = true
-            showZoomPercentage()
-            hideZoomPercentageAfterDelay()
-        } else if isFitToWidthZoomed {
-            // Was single-tap-zoomed — zoom back out
-            HapticManager.shared.lightTap()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                scale = 1.0
-                offset = .zero
-                lastOffset = .zero
-            }
-            isFitToWidthZoomed = false
-        } else {
-            // Normal: toggle controls
-            onTap()
-        }
+        // iOS Photos behavior: single tap toggles controls visibility
+        onTap()
     }
 
     private func doubleTapZoom(in geometry: GeometryProxy) {
         HapticManager.shared.mediumTap()
         isFitToWidthZoomed = false
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             if scale > 1.1 {
                 scale = 1.0
                 offset = .zero
                 lastOffset = .zero
             } else {
                 scale = 2.5
+                offset = .zero
+                lastOffset = .zero
             }
         }
         showZoomPercentage()
@@ -529,64 +553,6 @@ struct ZoomablePhotoView: View {
             scale = 1.0
             offset = .zero
             lastOffset = .zero
-        }
-    }
-
-    // MARK: - Zoom Helpers
-
-    private func imageNaturallyFillsWidth(in geometry: GeometryProxy) -> Bool {
-        let viewWidth = geometry.size.width
-        let viewHeight = geometry.size.height
-
-        let imageWidth: CGFloat
-        let imageHeight: CGFloat
-        if let image = fullImage ?? thumbnail {
-            imageWidth = image.size.width
-            imageHeight = image.size.height
-        } else {
-            imageWidth = CGFloat(screenshot.asset.pixelWidth)
-            imageHeight = CGFloat(screenshot.asset.pixelHeight)
-        }
-
-        guard imageWidth > 0 && imageHeight > 0 && viewWidth > 0 && viewHeight > 0 else { return true }
-
-        let imageAspectRatio = imageWidth / imageHeight
-        let viewAspectRatio = viewWidth / viewHeight
-
-        // Image fills width at .fit if its aspect ratio >= view's aspect ratio
-        // Small tolerance to avoid zoom for negligible differences
-        return imageAspectRatio >= viewAspectRatio - 0.05
-    }
-
-    private func calculateFitToWidthScale(in geometry: GeometryProxy) -> CGFloat {
-        let viewWidth = geometry.size.width
-        let viewHeight = geometry.size.height
-
-        let imageWidth: CGFloat
-        let imageHeight: CGFloat
-        if let image = fullImage ?? thumbnail {
-            imageWidth = image.size.width
-            imageHeight = image.size.height
-        } else {
-            imageWidth = CGFloat(screenshot.asset.pixelWidth)
-            imageHeight = CGFloat(screenshot.asset.pixelHeight)
-        }
-
-        guard imageWidth > 0 && imageHeight > 0 && viewWidth > 0 && viewHeight > 0 else { return 2.5 }
-
-        let imageAspectRatio = imageWidth / imageHeight
-        let viewAspectRatio = viewWidth / viewHeight
-
-        if imageAspectRatio < viewAspectRatio {
-            // Portrait image, height-constrained at .fit
-            // Displayed width at 1x = viewHeight * imageAspectRatio
-            // To fill width: scale = viewWidth / displayedWidth
-            let displayedWidth = viewHeight * imageAspectRatio
-            let targetScale = viewWidth / displayedWidth
-            return min(max(targetScale, 1.1), maxScale)
-        } else {
-            // Already fills width at 1x, use standard zoom level
-            return min(2.5, maxScale)
         }
     }
 

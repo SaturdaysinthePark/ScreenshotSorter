@@ -15,11 +15,15 @@ class CategorizationService {
     /// Categorize image using Vision + OCR for multi-category detection
     func categorizeAsync(image: UIImage) async throws -> [CategoryWithConfidence] {
         guard let ciImage = CIImage(image: image) else {
+            #if DEBUG
             print("❌ Failed to create CIImage")
+            #endif
             return [CategoryWithConfidence(category: .other, confidence: .medium, score: 0.5)]
         }
 
+        #if DEBUG
         print("🔍 Starting categorization...")
+        #endif
 
         // Run all detection methods in parallel with error handling
         // NEW: Single OCR pass, reused for both app and content detection
@@ -130,8 +134,10 @@ class CategorizationService {
         let result = Array(finalCategories)
         let resultOrOther = result.isEmpty ? [CategoryWithConfidence(category: .other, confidence: .medium, score: 0.5)] : result
 
+        #if DEBUG
         print("✅ Categorized as: \(resultOrOther.map { $0.category.rawValue }.joined(separator: ", "))")
         print("   Scores: \(categoryScores.sorted { $0.value > $1.value }.prefix(5).map { "\($0.key.rawValue):\(String(format: "%.2f", $0.value))" }.joined(separator: ", "))")
+        #endif
         return resultOrOther
     }
 
@@ -152,13 +158,17 @@ class CategorizationService {
 
                 guard error == nil,
                       let observations = request.results as? [VNRecognizedTextObservation] else {
+                    #if DEBUG
                     print("❌ OCR failed: \(error?.localizedDescription ?? "unknown")")
+                    #endif
                     continuation.resume(returning: "")
                     return
                 }
 
                 let allText = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
+                #if DEBUG
                 print("📝 OCR text: \(allText.prefix(100))...")
+                #endif
                 continuation.resume(returning: allText)
             }
 
@@ -175,7 +185,9 @@ class CategorizationService {
 
                     if !hasResumed {
                         hasResumed = true
+                        #if DEBUG
                         print("❌ OCR handler error: \(error)")
+                        #endif
                         continuation.resume(returning: "")
                     }
                 }
@@ -287,7 +299,9 @@ class CategorizationService {
             categories[.weather] = 0.85
         }
 
+        #if DEBUG
         print("📱 App detection: \(categories.map { "\($0.key.rawValue):\($0.value)" })")
+        #endif
         return categories
     }
 
@@ -312,7 +326,9 @@ class CategorizationService {
                 }
 
                 let hasFaces = !observations.isEmpty
+                #if DEBUG
                 print("👤 Face detection: \(hasFaces ? "Found \(observations.count) face(s)" : "No faces")")
+                #endif
                 continuation.resume(returning: hasFaces)
             }
 
@@ -359,13 +375,15 @@ class CategorizationService {
                 let animals = observations.filter { $0.confidence >= confidenceThreshold }
                 
                 let hasAnimals = !animals.isEmpty
+                #if DEBUG
                 if hasAnimals {
                     let animalTypes = animals.compactMap { $0.labels.first?.identifier }.joined(separator: ", ")
                     print("🐾 Animal detection: Found \(animals.count) animal(s) - \(animalTypes)")
                 } else {
                     print("🐾 Animal detection: No animals detected")
                 }
-                
+                #endif
+
                 continuation.resume(returning: hasAnimals)
             }
             
@@ -379,7 +397,9 @@ class CategorizationService {
                     
                     if !hasResumed {
                         hasResumed = true
+                        #if DEBUG
                         print("⚠️ Animal detection error: \(error.localizedDescription)")
+                        #endif
                         continuation.resume(returning: false)
                     }
                 }
@@ -577,7 +597,9 @@ class CategorizationService {
             categories[.iosHomeScreens] = self.detectIOSHomeScreen(allText)
         }
 
+        #if DEBUG
         print("📋 OCR categories: \(categories.map { "\($0.key.rawValue):\($0.value)" })")
+        #endif
         return categories
     }
 
@@ -591,7 +613,9 @@ class CategorizationService {
             }
             
             // Fallback to built-in Vision classifier
+            #if DEBUG
             print("⚠️ FastViT unavailable, using built-in Vision classifier")
+            #endif
             let request = ClassifyImageRequest()
             let results = try await request.perform(on: ciImage)
 
@@ -602,7 +626,9 @@ class CategorizationService {
                 let identifier = observation.identifier.lowercased()
                 let confidence = Double(observation.confidence)
 
+                #if DEBUG
                 print("  🔍 \(identifier): \(confidence)")
+                #endif
 
                 // Map Vision classifications to our categories
                 if self.isFood(identifier) {
@@ -690,10 +716,14 @@ class CategorizationService {
                 }
             }
 
+            #if DEBUG
             print("🖼️ Vision categories: \(categoryScores.map { "\($0.key.rawValue):\($0.value)" })")
+            #endif
             return categoryScores
         } catch {
+            #if DEBUG
             print("❌ Vision failed: \(error.localizedDescription)")
+            #endif
             return [:]
         }
     }
@@ -701,7 +731,9 @@ class CategorizationService {
     // MARK: - FastViT CoreML Classification
     
     private func classifyWithFastViT(ciImage: CIImage) async throws -> [ScreenshotCategory: Double] {
+        #if DEBUG
         print("🚀 Using FastViT T8 CoreML model for classification...")
+        #endif
 
         // Load FastViT T8F16 model - try both compiled (.mlmodelc) and package (.mlpackage) formats
         var modelURL = Bundle.main.url(forResource: "FastViTT8F16", withExtension: "mlmodelc")
@@ -709,13 +741,17 @@ class CategorizationService {
             modelURL = Bundle.main.url(forResource: "FastViTT8F16", withExtension: "mlpackage")
         }
         guard let modelURL = modelURL else {
+            #if DEBUG
             print("❌ FastViT model file not found in bundle (tried .mlmodelc and .mlpackage)")
+            #endif
             throw NSError(domain: "CoreML", code: -1, userInfo: [NSLocalizedDescriptionKey: "FastViT model not found"])
         }
 
         let config = MLModelConfiguration()
         config.computeUnits = .all // Use Neural Engine when available
+        #if DEBUG
         print("⚙️ FastViT loaded from \(modelURL.lastPathComponent) - using Neural Engine + GPU + CPU")
+        #endif
         
         let mlModel = try MLModel(contentsOf: modelURL, configuration: config)
         let visionModel = try VNCoreMLModel(for: mlModel)
@@ -739,7 +775,9 @@ class CategorizationService {
                     let identifier = observation.identifier.lowercased()
                     let confidence = Double(observation.confidence)
                     
+                    #if DEBUG
                     print("  🚀 FastViT: \(identifier): \(confidence)")
+                    #endif
                     
                     // Map FastViT classifications to our categories
                     if self.isFood(identifier) {
@@ -827,7 +865,9 @@ class CategorizationService {
                     }
                 }
 
+                #if DEBUG
                 print("🚀 FastViT detected categories: \(categoryScores.map { "\($0.key.rawValue):\(String(format: "%.2f", $0.value))" }.joined(separator: ", "))")
+                #endif
                 continuation.resume(returning: categoryScores)
             }
             
@@ -853,7 +893,9 @@ class CategorizationService {
                     completion(categories)
                 }
             } catch {
+                #if DEBUG
                 print("❌ Categorization error: \(error)")
+                #endif
                 await MainActor.run {
                     completion([.other])
                 }
