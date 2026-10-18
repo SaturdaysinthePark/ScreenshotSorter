@@ -2,8 +2,9 @@ import SwiftUI
 import UIKit
 
 // MARK: - Haptic Manager
-/// Centralized haptic feedback system for consistent tactile responses
-/// Respects user's Reduce Motion accessibility setting
+/// Centralized haptic feedback for consistent tactile responses.
+/// Haptics are NOT motion, so they intentionally ignore the Reduce Motion setting
+/// (the system already honors the user's global "System Haptics" switch).
 
 @MainActor
 final class HapticManager {
@@ -17,136 +18,157 @@ final class HapticManager {
     private let notificationGenerator = UINotificationFeedbackGenerator()
     private let selectionGenerator = UISelectionFeedbackGenerator()
 
+    private var celebrationTask: Task<Void, Never>?
+
     private init() {
         prepareGenerators()
     }
 
     // MARK: - Prepare Generators
-    /// Pre-warm haptic generators for immediate response
+    /// Pre-warm haptic generators for immediate response.
     func prepareGenerators() {
         lightImpact.prepare()
         mediumImpact.prepare()
         heavyImpact.prepare()
+        softImpact.prepare()
+        rigidImpact.prepare()
         notificationGenerator.prepare()
         selectionGenerator.prepare()
     }
 
+    /// Call when a drag begins so the threshold/commit haptics fire with no latency.
+    func prepareForSwipe() {
+        rigidImpact.prepare()
+        heavyImpact.prepare()
+        notificationGenerator.prepare()
+    }
+
     // MARK: - Core Haptic Methods
 
-    /// Light tap for subtle interactions (button taps, selections)
+    /// Light tap for subtle interactions (button taps, selections).
     func lightTap() {
-        guard !isReduceMotionEnabled else { return }
         lightImpact.impactOccurred()
     }
 
-    /// Medium tap for standard interactions
+    /// Medium tap for standard interactions.
     func mediumTap() {
-        guard !isReduceMotionEnabled else { return }
         mediumImpact.impactOccurred()
     }
 
-    /// Heavy tap for significant actions (delete confirmation, etc.)
+    /// Heavy tap for significant actions (delete confirmation, etc.).
     func heavyTap() {
-        guard !isReduceMotionEnabled else { return }
         heavyImpact.impactOccurred()
     }
 
-    /// Soft tap for gentle feedback
+    /// Soft tap for gentle feedback.
     func softTap() {
-        guard !isReduceMotionEnabled else { return }
         softImpact.impactOccurred()
     }
 
-    /// Rigid tap for precise feedback
+    /// Rigid tap for precise feedback.
     func rigidTap() {
-        guard !isReduceMotionEnabled else { return }
         rigidImpact.impactOccurred()
     }
 
-    /// Selection changed feedback
+    /// Selection changed feedback.
     func selectionChanged() {
-        guard !isReduceMotionEnabled else { return }
         selectionGenerator.selectionChanged()
     }
 
-    /// Success notification (green checkmark feedback)
+    /// Success notification.
     func success() {
-        guard !isReduceMotionEnabled else { return }
         notificationGenerator.notificationOccurred(.success)
     }
 
-    /// Warning notification
+    /// Warning notification.
     func warning() {
-        guard !isReduceMotionEnabled else { return }
         notificationGenerator.notificationOccurred(.warning)
     }
 
-    /// Error notification (red X feedback)
+    /// Error notification.
     func error() {
-        guard !isReduceMotionEnabled else { return }
         notificationGenerator.notificationOccurred(.error)
     }
 
     // MARK: - App-Specific Haptics
 
-    /// Swipe left action (delete) - heavy impact
+    /// Swipe left action (toss) — heavy, decisive thunk.
     func swipeDelete() {
-        guard !isReduceMotionEnabled else { return }
-        heavyImpact.impactOccurred()
+        heavyImpact.impactOccurred(intensity: 0.9)
     }
 
-    /// Swipe right action (keep) - success notification
+    /// Swipe right action (keep) — crisp success.
     func swipeKeep() {
-        guard !isReduceMotionEnabled else { return }
         notificationGenerator.notificationOccurred(.success)
     }
 
-    /// Undo action feedback
+    /// Card filed into a category (up-swipe).
+    func sortInto() {
+        mediumImpact.impactOccurred(intensity: 0.8)
+    }
+
+    /// Card snapped back to the deck without committing.
+    func cardReturn() {
+        softImpact.impactOccurred(intensity: 0.5)
+    }
+
+    /// Undo action feedback.
     func undo() {
-        guard !isReduceMotionEnabled else { return }
         mediumImpact.impactOccurred()
     }
 
-    /// Pan boundary reached - light impact
+    /// Pan boundary reached.
     func panBoundary() {
-        guard !isReduceMotionEnabled else { return }
         lightImpact.impactOccurred(intensity: 0.5)
     }
 
-    /// Zoom boundary reached - soft impact
+    /// Zoom boundary reached.
     func zoomBoundary() {
-        guard !isReduceMotionEnabled else { return }
         softImpact.impactOccurred(intensity: 0.6)
     }
 
-    /// Card flick/swipe threshold reached
+    /// Card drag crossed the commit threshold (fire once per crossing).
     func swipeThresholdReached() {
-        guard !isReduceMotionEnabled else { return }
-        rigidImpact.impactOccurred(intensity: 0.7)
+        rigidImpact.impactOccurred(intensity: 0.75)
     }
 
-    /// Processing complete
+    /// Card drag moved back below the commit threshold.
+    func swipeThresholdLeft() {
+        lightImpact.impactOccurred(intensity: 0.4)
+    }
+
+    /// Processing complete.
     func processingComplete() {
-        guard !isReduceMotionEnabled else { return }
         notificationGenerator.notificationOccurred(.success)
     }
 
-    /// Button tap
+    /// Button tap.
     func buttonTap() {
-        guard !isReduceMotionEnabled else { return }
         lightImpact.impactOccurred()
     }
 
-    /// Navigation transition
+    /// Navigation transition.
     func navigate() {
-        guard !isReduceMotionEnabled else { return }
         selectionGenerator.selectionChanged()
     }
 
-    // MARK: - Accessibility
+    /// Onboarding / pager page change.
+    func pageTurn() {
+        selectionGenerator.selectionChanged()
+    }
 
-    private var isReduceMotionEnabled: Bool {
-        UIAccessibility.isReduceMotionEnabled
+    /// Celebration: success followed by a short sparkle of light taps (matches confetti).
+    func celebrate() {
+        notificationGenerator.notificationOccurred(.success)
+        celebrationTask?.cancel()
+        celebrationTask = Task { @MainActor [weak self] in
+            let intensities: [CGFloat] = [0.7, 0.5, 0.35]
+            for intensity in intensities {
+                try? await Task.sleep(for: .milliseconds(90))
+                guard !Task.isCancelled else { return }
+                self?.lightImpact.impactOccurred(intensity: intensity)
+            }
+        }
     }
 }
 

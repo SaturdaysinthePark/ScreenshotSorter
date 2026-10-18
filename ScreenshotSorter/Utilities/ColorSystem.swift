@@ -1,8 +1,9 @@
 import SwiftUI
 
-// MARK: - Semantic Color System
-/// Centralized color system for consistent theming throughout the app
-/// iOS 26+ only - uses native gradients and glass effects
+// MARK: - DEPRECATED compatibility shim
+/// Legacy color API kept compiling while screens migrate to the design system
+/// (`Palette`, `dsCard`, `BrandButtonStyle` in Utilities/DesignSystem).
+/// Everything here maps onto `Palette`. Do not use in new code — delete once all callers migrate.
 
 enum SemanticColor {
     case primary
@@ -12,48 +13,40 @@ enum SemanticColor {
     case info
 
     var gradient: LinearGradient {
-        LinearGradient(
-            colors: colors,
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     var horizontalGradient: LinearGradient {
-        LinearGradient(
-            colors: colors,
-            startPoint: .leading,
-            endPoint: .trailing
-        )
+        LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
     }
 
     var colors: [Color] {
         switch self {
         case .primary:
-            return [.blue, .purple]
+            return [Palette.brand, Palette.brandSecondary]
         case .success:
-            return [.green, .teal]
+            return [Palette.keep, CategoryGroup.placesTravel.color]
         case .danger:
-            return [.red, .orange]
+            return [Palette.toss, Palette.brandSecondary]
         case .warning:
-            return [.orange, .yellow]
+            return [Palette.warning, CategoryGroup.information.color]
         case .info:
-            return [.cyan, .blue]
+            return [Palette.info, CategoryGroup.system.color]
         }
     }
 
     var solidColor: Color {
         switch self {
         case .primary:
-            return .blue
+            return Palette.brand
         case .success:
-            return .green
+            return Palette.keep
         case .danger:
-            return .red
+            return Palette.toss
         case .warning:
-            return .orange
+            return Palette.warning
         case .info:
-            return .cyan
+            return Palette.info
         }
     }
 
@@ -62,101 +55,46 @@ enum SemanticColor {
     }
 }
 
-// MARK: - Color Extensions
-
-extension Color {
-    static let semanticPrimary = SemanticColor.primary.solidColor
-    static let semanticSuccess = SemanticColor.success.solidColor
-    static let semanticDanger = SemanticColor.danger.solidColor
-    static let semanticWarning = SemanticColor.warning.solidColor
-    static let semanticInfo = SemanticColor.info.solidColor
-}
-
-// MARK: - Glass Card Modifiers (iOS 26+ only)
-
-struct PrimaryCardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .glassEffect(.regular, in: .rect(cornerRadius: 16))
-    }
-}
-
-struct SecondaryCardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .glassEffect(.regular, in: .rect(cornerRadius: 12))
-    }
-}
-
-struct TintedGlassModifier: ViewModifier {
-    let color: Color
-    let cornerRadius: CGFloat
-
-    func body(content: Content) -> some View {
-        content
-            .glassEffect(.regular.tint(color.opacity(0.2)), in: .rect(cornerRadius: cornerRadius))
-    }
-}
-
-struct CapsuleGlassModifier: ViewModifier {
-    let color: Color?
-
-    func body(content: Content) -> some View {
-        if let color = color {
-            content
-                .glassEffect(.regular.tint(color.opacity(0.2)), in: .capsule)
-        } else {
-            content
-                .glassEffect(.regular, in: .capsule)
-        }
-    }
-}
-
-// MARK: - View Extensions
+// MARK: - Legacy View Extensions (mapped onto the design system)
 
 extension View {
+    /// Deprecated: use `dsCard()`.
     func primaryCard() -> some View {
-        modifier(PrimaryCardModifier())
+        dsCard(radius: Radius.md)
     }
 
+    /// Deprecated: use `dsCard(radius: Radius.sm)`.
     func secondaryCard() -> some View {
-        modifier(SecondaryCardModifier())
+        dsCard(radius: Radius.sm + 2)
     }
 
+    /// Deprecated: use `dsCard(tint:radius:)`.
     func tintedGlass(color: Color, cornerRadius: CGFloat = 12) -> some View {
-        modifier(TintedGlassModifier(color: color, cornerRadius: cornerRadius))
+        dsCard(tint: color, radius: cornerRadius)
     }
 
+    /// Deprecated: use `glassEffect(.regular.tint(...), in: .capsule)` or `TagChip`.
     func capsuleGlass(tint: Color? = nil) -> some View {
-        modifier(CapsuleGlassModifier(color: tint))
+        modifier(LegacyCapsuleGlassModifier(tint: tint))
     }
 
+    /// Deprecated: use `foregroundStyle(Palette.brandGradient)`.
     func semanticGradient(_ semantic: SemanticColor) -> some View {
         foregroundStyle(semantic.gradient)
     }
 }
 
-// MARK: - Gradient Button Styles
+private struct LegacyCapsuleGlassModifier: ViewModifier {
+    let tint: Color?
 
-struct SemanticGradientButtonStyle: ButtonStyle {
-    let semantic: SemanticColor
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(semantic.gradient)
-            .cornerRadius(12)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    func body(content: Content) -> some View {
+        content.glassEffect(glass, in: .capsule)
     }
-}
 
-extension ButtonStyle where Self == SemanticGradientButtonStyle {
-    static func semantic(_ semantic: SemanticColor) -> SemanticGradientButtonStyle {
-        SemanticGradientButtonStyle(semantic: semantic)
+    private var glass: Glass {
+        if let tint {
+            return Glass.regular.tint(tint.opacity(0.22))
+        }
+        return Glass.regular
     }
 }

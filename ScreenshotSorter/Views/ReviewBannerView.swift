@@ -1,55 +1,54 @@
 import SwiftUI
 
+// MARK: - Review Banner
+/// "N screenshots waiting for a verdict" — brand-tinted glass card with a bouncing icon and one CTA.
+
 struct ReviewBannerView: View {
     let unreviewedCount: Int
     let isProcessing: Bool
     let onReviewTapped: () -> Void
     let onDismiss: () -> Void
 
+    init(
+        unreviewedCount: Int,
+        isProcessing: Bool,
+        onReviewTapped: @escaping () -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.unreviewedCount = unreviewedCount
+        self.isProcessing = isProcessing
+        self.onReviewTapped = onReviewTapped
+        self.onDismiss = onDismiss
+    }
+
     var body: some View {
-        VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(SemanticColor.primary.gradient)
-
-                    Text("\(unreviewedCount) screenshot\(unreviewedCount == 1 ? "" : "s") to review")
-                        .font(.headline)
-                }
-
-                if isProcessing {
-                    Text("Processing... More may be added")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("Keep your library organized")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 12) {
-                Button(action: onReviewTapped) {
-                    Text("Review Now")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glassProminent)
-
-                Button(action: onDismiss) {
-                    Text("Later")
-                        .font(.subheadline)
-                        .frame(width: 80)
-                }
-                .buttonStyle(.glass)
+        BannerCard(
+            systemImage: "rectangle.stack.fill",
+            tint: Palette.brand,
+            title: Brand.Copy.Banners.reviewTitle(unreviewedCount),
+            subtitle: isProcessing ? Brand.Copy.Banners.reviewSubtitleProcessing : Brand.Copy.Banners.reviewSubtitle,
+            ctaTitle: Brand.Copy.Banners.reviewCTA,
+            ctaSystemImage: "hand.draw.fill",
+            dismissLabel: Brand.Copy.Banners.later,
+            onCTA: onReviewTapped,
+            onDismiss: onDismiss
+        ) {
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(Palette.brand)
+                    .accessibilityHidden(true)
             }
         }
-        .padding(16)
-        .tintedGlass(color: .blue, cornerRadius: 12)
-        .padding(.horizontal, 16)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(unreviewedCount) screenshots to review")
-        .accessibilityHint("Contains buttons to review now or dismiss")
+        .padding(.horizontal, Space.md)
     }
+}
+
+#Preview("Review banner") {
+    VStack(spacing: 20) {
+        ReviewBannerView(unreviewedCount: 24, isProcessing: false, onReviewTapped: {}, onDismiss: {})
+        ReviewBannerView(unreviewedCount: 1, isProcessing: true, onReviewTapped: {}, onDismiss: {})
+    }
+    .frame(maxHeight: .infinity)
+    .background(Palette.canvas)
 }

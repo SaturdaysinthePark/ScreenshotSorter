@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Tooltip Keys for One-Time Display
 /// Identifiers for different tooltips to track which have been shown
@@ -45,7 +46,7 @@ final class TooltipManager: ObservableObject {
 
         dismissTimer?.cancel()
 
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        Motion.perform(Motion.bouncy, reduceMotion: UIAccessibility.isReduceMotionEnabled) {
             activeTooltip = key
             isVisible = true
         }
@@ -63,25 +64,26 @@ final class TooltipManager: ObservableObject {
 
     func dismiss() {
         dismissTimer?.cancel()
-        withAnimation(.easeOut(duration: 0.3)) {
+        Motion.perform(Motion.quick, reduceMotion: UIAccessibility.isReduceMotionEnabled) {
             isVisible = false
         }
         // Clear after animation
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !self.isVisible else { return }
             activeTooltip = nil
         }
     }
 }
 
 // MARK: - Tooltip View
+/// On-brand hint bubble: Liquid Glass capsule with a brand-gradient icon badge
+/// and a small pointer nub facing the anchored view.
 
 struct TooltipView: View {
     let text: String
     let icon: String?
     let position: TooltipPosition
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum TooltipPosition {
         case top
@@ -97,22 +99,75 @@ struct TooltipView: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.xs) {
             if let icon = icon {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(SemanticColor.info.gradient)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Palette.onBrand)
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Palette.brandGradient))
+                    .accessibilityHidden(true)
             }
 
             Text(text)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
+                .font(.dsCallout)
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .glassEffect(.regular.tint(Color.cyan.opacity(0.15)), in: .capsule)
-        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .padding(.leading, icon == nil ? Space.md : Space.xs)
+        .padding(.trailing, Space.md)
+        .padding(.vertical, Space.xs)
+        .glassEffect(.regular.tint(Palette.brand.opacity(0.18)), in: .capsule)
+        .overlay(alignment: nubAlignment) {
+            TooltipNub()
+                .fill(Palette.brand.opacity(0.85))
+                .frame(width: 14, height: 7)
+                .rotationEffect(.degrees(nubRotation))
+                .offset(nubOffset)
+                .accessibilityHidden(true)
+        }
+        .shadow(color: Palette.brand.opacity(0.18), radius: 12, x: 0, y: 6)
+        .accessibilityElement(children: .combine)
+    }
+
+    // The nub points toward the view the tooltip is attached to.
+    private var nubAlignment: Alignment {
+        switch position {
+        case .bottom: return .top
+        case .top: return .bottom
+        case .leading: return .trailing
+        case .trailing: return .leading
+        }
+    }
+
+    private var nubRotation: Double {
+        switch position {
+        case .bottom: return 0
+        case .top: return 180
+        case .leading: return 90
+        case .trailing: return -90
+        }
+    }
+
+    private var nubOffset: CGSize {
+        switch position {
+        case .bottom: return CGSize(width: 0, height: -6)
+        case .top: return CGSize(width: 0, height: 6)
+        case .leading: return CGSize(width: 9, height: 0)
+        case .trailing: return CGSize(width: -9, height: 0)
+        }
+    }
+}
+
+/// Small upward-pointing triangle.
+private struct TooltipNub: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -125,18 +180,23 @@ struct TooltipModifier: ViewModifier {
     let position: TooltipView.TooltipPosition
     let showCondition: Bool
 
-    @StateObject private var tooltipManager = TooltipManager.shared
+    @ObservedObject private var tooltipManager = TooltipManager.shared
     @State private var hasTriggered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
             .overlay(alignment: overlayAlignment) {
                 if tooltipManager.activeTooltip == key && tooltipManager.isVisible {
                     TooltipView(text, icon: icon, position: position)
-                        .transition(.asymmetric(
-                            insertion: .scale(scale: 0.8).combined(with: .opacity),
-                            removal: .opacity
-                        ))
+                        .transition(
+                            reduceMotion
+                                ? AnyTransition.opacity
+                                : AnyTransition.asymmetric(
+                                    insertion: AnyTransition.scale(scale: 0.85, anchor: transitionAnchor).combined(with: AnyTransition.opacity),
+                                    removal: AnyTransition.opacity
+                                )
+                        )
                         .padding(tooltipPadding)
                         .onTapGesture {
                             tooltipManager.dismiss()
@@ -167,6 +227,15 @@ struct TooltipModifier: ViewModifier {
         case .bottom: return .bottom
         case .leading: return .leading
         case .trailing: return .trailing
+        }
+    }
+
+    private var transitionAnchor: UnitPoint {
+        switch position {
+        case .top: return .bottom
+        case .bottom: return .top
+        case .leading: return .trailing
+        case .trailing: return .leading
         }
     }
 
@@ -204,7 +273,7 @@ extension TooltipKey {
     var defaultText: String {
         switch self {
         case .swipeToReview:
-            return "Swipe left to delete, right to keep"
+            return Brand.Copy.Review.hint
         case .doubleTapToZoom:
             return "Double-tap to zoom in"
         case .dragToDismiss:
@@ -214,7 +283,7 @@ extension TooltipKey {
         case .undoAction:
             return "Made a mistake? Tap Undo"
         case .reviewBadges:
-            return "Badges show AI confidence level"
+            return "Dashed chips are our best guesses"
         }
     }
 
@@ -240,14 +309,15 @@ extension TooltipKey {
 
 #Preview("Tooltips") {
     VStack(spacing: 40) {
-        TooltipView("Swipe left to delete, right to keep", icon: "hand.draw")
+        TooltipView(TooltipKey.swipeToReview.defaultText, icon: "hand.draw")
 
         TooltipView("Double-tap to zoom", icon: "hand.tap", position: .top)
 
         Button("Show Tooltip") {
             TooltipManager.shared.showTooltip(.swipeToReview)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.brand(.primary, size: .compact))
     }
     .padding()
+    .background(Palette.canvas)
 }
