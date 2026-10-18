@@ -1,582 +1,482 @@
 import SwiftUI
 
+/// Home: hero stats, live analysis, review banner, smart suggestions and category shelves.
+/// Becomes the search results screen while a search is active.
 struct CollectionsView: View {
-    @ObservedObject var viewModel: CollectionsViewModel
-    @Binding var navigationPath: NavigationPath
-    @State private var showReviewMode = false
-    @State private var showActionsMenu = false
+    @Binding var path: NavigationPath
 
-    let columns = [
-        GridItem(.flexible()),
-        GridItem(.flexible())
-    ]
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var zoomNamespace
+    @State private var showReview = false
+    @State private var showReanalyzeConfirm = false
 
     var body: some View {
+        @Bindable var model = model
+
         ScrollView {
-            VStack(spacing: 16) {
-                // Empty state
-                if viewModel.collections.isEmpty && !viewModel.isProcessing && !viewModel.isLoading && viewModel.allScreenshots.isEmpty {
-                    EnhancedEmptyStateView()
-                        .padding(.top, 100)
-                } else {
-                    // Review banner
-                    if viewModel.showReviewBanner {
-                        ReviewBannerView(
-                            unreviewedCount: viewModel.unreviewedCount,
-                            isProcessing: viewModel.isProcessing,
-                            onReviewTapped: {
-                                HapticManager.shared.lightTap()
-                                showReviewMode = true
-                            },
-                            onDismiss: {
-                                viewModel.dismissReviewBanner()
-                            }
-                        )
-                    }
-
-                    // Unprocessed banner
-                    if viewModel.showUnprocessedBanner && !viewModel.isProcessing {
-                        UnprocessedBannerView(
-                            unprocessedCount: viewModel.unprocessedPhotoCount,
-                            onProcessTapped: {
-                                HapticManager.shared.lightTap()
-                                viewModel.processUnprocessedOnly()
-                            },
-                            onDismiss: {
-                                viewModel.dismissUnprocessedBanner()
-                            }
-                        )
-                    }
-
-                    // Processing indicator with progress bar
-                    if viewModel.isProcessing {
-                        EnhancedProcessingIndicatorView(
-                            progress: viewModel.processingProgress,
-                            totalProcessed: viewModel.totalProcessed,
-                            totalToProcess: viewModel.totalToProcess,
-                            isPaused: viewModel.isPaused,
-                            onPauseToggle: {
-                                HapticManager.shared.lightTap()
-                                viewModel.togglePause()
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, viewModel.allScreenshots.isEmpty ? 100 : 0)
-                    }
-
-                    // All Screenshots card
-                    if !viewModel.allScreenshots.isEmpty {
-                        VStack(spacing: 12) {
-                            HStack {
-                                Text("Collections")
-                                    .font(.title2.bold())
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-
-                            NavigationLink(value: ScreenshotCategory.all) {
-                                AllScreenshotsCard(
-                                    screenshots: viewModel.allScreenshots,
-                                    totalCount: totalScreenshotCount
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                            .padding(.horizontal, 16)
-                        }
-                    }
-
-                    // Collections - grouped or flat
-                    if !viewModel.collections.isEmpty {
-                        if viewModel.isGroupedView {
-                            GroupedCollectionsView(
-                                collections: viewModel.sortedCollections,
-                                allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
-                                navigationPath: $navigationPath,
-                                columns: columns
-                            )
-                        } else {
-                            LazyVGrid(columns: columns, spacing: 16) {
-                                ForEach(viewModel.sortedCollections) { collection in
-                                    NavigationLink(value: collection.category) {
-                                        CollectionCard(collection: collection)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                            }
-                            .padding(16)
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: ScreenshotCategory.self) { category in
-            // Find the collection for this category
-            if let collection = viewModel.sortedCollections.first(where: { $0.category == category }) {
-                CleanGalleryView(
-                    collection: collection,
-                    allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
-                    navigationPath: $navigationPath
-                )
-                .id(category)
-            } else if category == .all {
-                CleanGalleryView(
-                    collection: viewModel.allScreenshotsCollection,
-                    allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
-                    navigationPath: $navigationPath
-                )
-                .id(category)
+            if model.isSearchActive {
+                SearchResultsView()
+                    .transition(.opacity)
             } else {
-                // Create empty collection for category
-                CleanGalleryView(
-                    collection: ScreenshotCollection(category: category, screenshots: []),
-                    allCollections: viewModel.sortedCollections + [viewModel.allScreenshotsCollection],
-                    navigationPath: $navigationPath
-                )
-                .id(category)
+                homeContent
+                    .transition(.opacity)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 12) {
-                    // Sort/filter menu
-                    Menu {
-                        Picker("Sort By", selection: $viewModel.sortOption) {
-                            ForEach(CollectionsSortOption.allCases, id: \.self) { option in
-                                Text(option.rawValue).tag(option)
-                            }
-                        }
-
-                        Divider()
-
-                        Toggle(isOn: $viewModel.isGroupedView) {
-                            Label("Group by Category", systemImage: "square.grid.2x2")
-                        }
-
-                        Toggle(isOn: $viewModel.showEmptyCategories) {
-                            Label("Show Empty Categories", systemImage: "eye")
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.system(size: 18))
-                            .foregroundStyle(SemanticColor.primary.gradient)
-                    }
-                    .accessibilityLabel("Sort and filter options")
-
-                    // Review button
-                    if viewModel.unreviewedCount > 0 {
-                        Button(action: {
-                            HapticManager.shared.lightTap()
-                            showReviewMode = true
-                        }) {
-                            Image(systemName: "checkmark.circle")
-                                .font(.system(size: 18))
-                                .foregroundStyle(SemanticColor.primary.gradient)
-                        }
-                        .accessibilityLabel("Review \(viewModel.unreviewedCount) screenshots")
-                        .accessibilityHint("Double-tap to start reviewing unreviewed screenshots")
-                    }
-
-                    // Actions menu (replaces ambiguous refresh button)
-                    Menu {
-                        Button(action: {
-                            HapticManager.shared.lightTap()
-                            viewModel.processUnprocessedOnly()
-                        }) {
-                            Label("Process New Screenshots", systemImage: "wand.and.stars")
-                        }
-
-                        Button(role: .destructive, action: {
-                            showActionsMenu = true
-                        }) {
-                            Label("Re-analyze All", systemImage: "arrow.clockwise")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 18))
-                            .foregroundStyle(SemanticColor.primary.gradient)
-                    }
-                    .accessibilityLabel("More actions")
-                }
+        .scrollDismissesKeyboard(.immediately)
+        .background {
+            ZStack {
+                Palette.canvas.ignoresSafeArea()
+                AmbientGlow(intensity: 0.14)
             }
         }
-        // Consolidated confirmation dialog (replaces separate re-analyze alert)
-        .confirmationDialog(
-            "Re-analyze All Screenshots?",
-            isPresented: $showActionsMenu,
-            titleVisibility: .visible
-        ) {
-            if viewModel.unprocessedPhotoCount > 0 {
-                Button("Process Unprocessed Only (\(viewModel.unprocessedPhotoCount))") {
-                    viewModel.processUnprocessedOnly()
-                }
-
-                Button("Re-analyze All (\(viewModel.allScreenshots.count))", role: .destructive) {
-                    viewModel.reanalyzeAll()
-                }
-            } else {
-                Button("Re-analyze All \(viewModel.allScreenshots.count) Screenshots", role: .destructive) {
-                    viewModel.refreshCollections()
-                }
-            }
-
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            if viewModel.isProcessing {
-                Text("Analysis is currently in progress. Re-analyzing will restart from the beginning.")
-            } else if viewModel.unprocessedPhotoCount > 0 {
-                Text("You have \(viewModel.unprocessedPhotoCount) unprocessed screenshots. Choose an action below.")
-            } else {
-                Text("This will re-analyze all screenshots and may take several minutes.")
-            }
+        .dsAnimation(Motion.gentle, value: model.isSearchActive)
+        .navigationTitle(Brand.Copy.Home.title)
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(
+            text: $model.searchText,
+            tokens: $model.searchTokens,
+            suggestedTokens: .constant(model.suggestedSearchTokens),
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: Text(Brand.Copy.Search.prompt)
+        ) { token in
+            Label(token.title, systemImage: token.systemImage)
         }
-        .alert("New Screenshots Detected", isPresented: $viewModel.hasNewScreenshots) {
-            Button("Process Now") {
-                HapticManager.shared.lightTap()
-                viewModel.processNewScreenshots()
-            }
-            Button("Later", role: .cancel) {
-                viewModel.loadExistingPhotosWithoutProcessing()
-            }
-        } message: {
-            Text("Found \(viewModel.newScreenshotCount) new screenshot\(viewModel.newScreenshotCount == 1 ? "" : "s"). Would you like to process them now?")
+        .toolbar { toolbarContent }
+        .navigationDestination(for: CollectionKind.self) { kind in
+            CleanGalleryView(kind: kind, zoomNamespace: zoomNamespace)
+                .navigationTransition(.zoom(sourceID: kind.id, in: zoomNamespace))
         }
-        .alert("Unprocessed Screenshots", isPresented: $viewModel.hasUnprocessedPhotos) {
-            Button("Process Now") {
-                HapticManager.shared.lightTap()
-                viewModel.processUnprocessedOnly()
-            }
-            Button("Later", role: .cancel) {
-                viewModel.processLaterPhotos()
-            }
-        } message: {
-            Text("You have \(viewModel.unprocessedPhotoCount) unprocessed screenshot\(viewModel.unprocessedPhotoCount == 1 ? "" : "s"). Would you like to process them now?")
-        }
-        .fullScreenCover(isPresented: $showReviewMode, onDismiss: {
-            viewModel.updateReviewState()
+        .fullScreenCover(isPresented: $showReview, onDismiss: {
+            model.syncReviewedFromDefaults()
         }) {
             ScreenshotReviewView(
-                viewModel: ScreenshotReviewViewModel(
-                    screenshots: viewModel.unreviewedScreenshots
-                )
+                viewModel: ScreenshotReviewViewModel(screenshots: model.unreviewedScreenshots),
+                onSortInto: { screenshot, category in
+                    model.move([screenshot.id], from: screenshot.categories.first, to: category)
+                }
             )
         }
-    }
-
-    private var totalScreenshotCount: Int {
-        viewModel.allScreenshots.count
-    }
-}
-
-// MARK: - Collection Card
-
-struct CollectionCard: View {
-    let collection: ScreenshotCollection
-
-    var body: some View {
-        VStack(spacing: 16) {
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(SemanticColor.primary.lightBackground)
-                    .frame(width: 60, height: 60)
-
-                Image(systemName: collection.category.icon)
-                    .font(.system(size: 28))
-                    .foregroundStyle(SemanticColor.primary.gradient)
-            }
-
-            // Category info
-            VStack(spacing: 4) {
-                Text(collection.category.rawValue)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-
-                Text("\(collection.count) screenshot\(collection.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+        .alert(Brand.Copy.Home.reanalyzeConfirmTitle, isPresented: $showReanalyzeConfirm) {
+            Button(Brand.Copy.Home.reanalyze) { model.reanalyzeAll() }
+            Button(Brand.Copy.Banners.later, role: .cancel) {}
+        } message: {
+            Text(Brand.Copy.Home.reanalyzeConfirmBody)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .padding(.horizontal, 12)
-        .primaryCard()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(collection.category.rawValue), \(collection.count) screenshots")
-        .accessibilityHint("Double-tap to view collection")
-    }
-}
-
-// MARK: - Grouped Collections View
-
-struct GroupedCollectionsView: View {
-    let collections: [ScreenshotCollection]
-    let allCollections: [ScreenshotCollection]
-    @Binding var navigationPath: NavigationPath
-    let columns: [GridItem]
-
-    var groupedCollections: [(group: CategoryGroup, collections: [ScreenshotCollection])] {
-        let grouped = Dictionary(grouping: collections) { $0.category.group }
-        return grouped
-            .sorted { $0.key.rawValue < $1.key.rawValue }
-            .map { (group: $0.key, collections: $0.value) }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            ForEach(groupedCollections, id: \.group) { item in
-                VStack(alignment: .leading, spacing: 12) {
-                    // Section header
-                    HStack {
-                        Image(systemName: item.group.icon)
-                            .font(.system(size: 16, weight: .semibold))
-                        Text(item.group.rawValue)
-                            .font(.system(size: 18, weight: .bold))
-                    }
-                    .foregroundStyle(SemanticColor.primary.gradient)
-                    .padding(.horizontal, 16)
+    // MARK: - Home content
 
-                    // Grid
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(item.collections) { collection in
-                            NavigationLink(value: collection.category) {
-                                CollectionCard(collection: collection)
-                            }
-                            .buttonStyle(PlainButtonStyle())
+    @ViewBuilder
+    private var homeContent: some View {
+        LazyVStack(alignment: .leading, spacing: Space.lg) {
+            heroStats
+                .padding(.horizontal, Space.gutter)
+
+            if !model.progress.isIdle || model.progress.isPaused {
+                AnalysisProgressCard()
+                    .padding(.horizontal, Space.gutter)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if model.showReviewBanner {
+                ReviewBannerView(
+                    unreviewedCount: model.unreviewedScreenshots.count,
+                    isProcessing: !model.progress.isIdle,
+                    onReviewTapped: {
+                        HapticManager.shared.lightTap()
+                        showReview = true
+                    },
+                    onDismiss: {
+                        Motion.perform(Motion.snappy, reduceMotion: reduceMotion) {
+                            model.dismissReviewBanner()
                         }
                     }
-                    .padding(.horizontal, 16)
+                )
+                .padding(.horizontal, Space.gutter)
+                .transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+
+            if let suggestion = model.propagationSuggestion {
+                PropagationCard(suggestion: suggestion)
+                    .padding(.horizontal, Space.gutter)
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+
+            if model.isLibraryLoaded && model.library.isEmpty {
+                EmptyLibraryView()
+                    .padding(.top, Space.xl)
+            } else {
+                allScreenshotsCard
+                    .padding(.horizontal, Space.gutter)
+
+                if !model.library.suggestedSmartCollections.isEmpty {
+                    SmartSuggestionsSection(zoomNamespace: zoomNamespace)
+                }
+
+                if !model.library.keptSmartCollections.isEmpty {
+                    keptCollectionsShelf
+                }
+
+                ForEach(groupedShelves, id: \.group) { shelf in
+                    CategoryShelf(group: shelf.group, collections: shelf.collections, zoomNamespace: zoomNamespace)
                 }
             }
         }
-        .padding(.vertical)
+        .padding(.top, Space.xs)
+        .padding(.bottom, Space.xxl)
+        .dsAnimation(Motion.snappy, value: model.progress.isIdle)
+        .dsAnimation(Motion.snappy, value: model.showReviewBanner)
+        .dsAnimation(Motion.bouncy, value: model.propagationSuggestion)
+        .dsAnimation(Motion.gentle, value: model.library.smartCollections)
     }
-}
 
-// MARK: - All Screenshots Card
-
-struct AllScreenshotsCard: View {
-    let screenshots: [Screenshot]
-    let totalCount: Int
-
-    var body: some View {
-        HStack(spacing: 16) {
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(SemanticColor.primary.lightBackground)
-                    .frame(width: 60, height: 60)
-
-                Image(systemName: "photo.stack")
-                    .font(.system(size: 28))
-                    .foregroundStyle(SemanticColor.primary.gradient)
+    private var heroStats: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Text(Brand.Copy.Home.greeting())
+                .font(.dsEyebrow)
+                .textCase(.uppercase)
+                .foregroundStyle(Palette.inkSecondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Space.xs) {
+                    StatPill(value: model.library.count, label: Brand.Copy.Home.totalLabel, systemImage: "photo.stack.fill", tint: Palette.brand)
+                    StatPill(value: Int((model.analysisFraction * 100).rounded()), label: Brand.Copy.Home.sortedLabel, systemImage: "wand.and.stars", tint: Palette.keep)
+                    StatPill(value: groupedShelves.reduce(0) { $0 + $1.collections.count }, label: Brand.Copy.Home.stacksLabel, systemImage: "square.stack.3d.up.fill", tint: Palette.brandSecondary)
+                }
             }
-
-            // Info
-            VStack(alignment: .leading, spacing: 4) {
-                Text("All Screenshots")
-                    .font(.headline.weight(.semibold))
-                    .foregroundColor(.primary)
-
-                Text("\(totalCount) screenshot\(totalCount == 1 ? "" : "s")")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.secondary)
+            .scrollClipDisabled()
         }
-        .padding(16)
-        .primaryCard()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("All screenshots, \(totalCount) total")
-        .accessibilityHint("Double-tap to view all screenshots")
-    }
-}
-
-// MARK: - Enhanced Processing Indicator
-
-struct EnhancedProcessingIndicatorView: View {
-    let progress: String
-    let totalProcessed: Int
-    let totalToProcess: Int
-    let isPaused: Bool
-    let onPauseToggle: () -> Void
-
-    @State private var animatingDots = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var percentComplete: Double {
-        guard totalToProcess > 0 else { return 0 }
-        return Double(totalProcessed) / Double(totalToProcess)
     }
 
-    private var percentText: String {
-        "\(Int(percentComplete * 100))%"
-    }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                if !isPaused {
-                    // Animated processing indicator
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 20))
-                        .foregroundStyle(SemanticColor.primary.gradient)
-                        .symbolEffect(.variableColor, options: .repeating, value: animatingDots)
-                } else {
-                    Image(systemName: "pause.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(SemanticColor.warning.gradient)
+    private var allScreenshotsCard: some View {
+        let collection = model.library.collection(for: .all)
+        return NavigationLink(value: CollectionKind.all) {
+            HStack(spacing: Space.md) {
+                MosaicThumbnail(screenshots: Array(collection.screenshots.prefix(4)), tint: Palette.brand, size: 84)
+                    .matchedTransitionSource(id: CollectionKind.all.id, in: zoomNamespace)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text(Brand.Copy.Home.allScreenshots)
+                        .font(.dsTitle2)
+                        .foregroundStyle(Palette.ink)
+                    Text(Brand.Copy.Home.allScreenshotsSubtitle)
+                        .font(.dsCallout)
+                        .foregroundStyle(Palette.inkSecondary)
+                    Text(collection.count.formatted())
+                        .font(.dsMono)
+                        .foregroundStyle(Palette.brand)
+                        .contentTransition(.numericText())
                 }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.dsHeadline)
+                    .foregroundStyle(Palette.inkSecondary)
+            }
+            .padding(Space.md)
+            .dsSurface(radius: Radius.lg, tint: Palette.brand)
+        }
+        .pressable()
+        .accessibilityLabel("\(Brand.Copy.Home.allScreenshots), \(Brand.screenshots(collection.count))")
+    }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(isPaused ? "Paused" : "Processing Screenshots")
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        Text(percentText)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(SemanticColor.primary.gradient)
-                    }
-
-                    Text("\(totalProcessed) of \(totalToProcess)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                // Pause/Resume button with distinct colors
-                Button(action: onPauseToggle) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(isPaused ? "Resume" : "Pause")
-                            .font(.subheadline.weight(.semibold))
+    private var keptCollectionsShelf: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            ShelfHeader(title: Brand.Copy.Home.yourCollections, systemImage: "sparkles", tint: Palette.brandSecondary, count: model.library.keptSmartCollections.count)
+                .padding(.horizontal, Space.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: Space.sm) {
+                    ForEach(model.library.keptSmartCollections) { smart in
+                        let kind = CollectionKind.smart(id: smart.id)
+                        NavigationLink(value: kind) {
+                            CollectionCard(collection: model.library.collection(for: kind), tint: Palette.brandSecondary, zoomNamespace: zoomNamespace)
+                        }
+                        .pressable()
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                model.deleteSmartCollection(smart.id)
+                            } label: {
+                                Label(Brand.Copy.Smart.delete, systemImage: "trash")
+                            }
+                        }
                     }
                 }
-                .buttonStyle(.glass)
-                .tint(isPaused ? .green : .orange)
-                .fixedSize()
+                .padding(.horizontal, Space.gutter)
+                .scrollTargetLayout()
             }
-
-            // Progress bar
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color(.systemGray5))
-                        .frame(height: 6)
-
-                    Capsule()
-                        .fill(isPaused ? SemanticColor.warning.gradient : SemanticColor.primary.gradient)
-                        .frame(width: geometry.size.width * percentComplete, height: 6)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: percentComplete)
-                }
-            }
-            .frame(height: 6)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled()
         }
-        .padding(16)
-        .secondaryCard()
-        .onAppear {
-            if !reduceMotion {
-                animatingDots = true
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(isPaused ? "Processing paused at \(totalProcessed) of \(totalToProcess)" : "Processing \(totalProcessed) of \(totalToProcess) screenshots, \(percentText) complete")
-        .accessibilityHint("Double-tap to \(isPaused ? "resume" : "pause") processing")
     }
-}
 
-// MARK: - Enhanced Empty State
+    private struct Shelf {
+        let group: CategoryGroup
+        let collections: [ScreenshotCollection]
+        let total: Int
+    }
 
-struct EnhancedEmptyStateView: View {
-    @State private var isAnimating = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var groupedShelves: [Shelf] {
+        let collections = model.library.categoryCollections(sort: model.collectionsSort)
+        var byGroup: [CategoryGroup: [ScreenshotCollection]] = [:]
+        for collection in collections {
+            byGroup[collection.category.group, default: []].append(collection)
+        }
+        let shelves = byGroup.map { group, items in
+            Shelf(group: group, collections: items, total: items.reduce(0) { $0 + $1.count })
+        }
+        return shelves.sorted { lhs, rhs in
+            if lhs.group == .other { return false }
+            if rhs.group == .other { return true }
+            return lhs.total > rhs.total
+        }
+    }
 
-    var body: some View {
-        VStack(spacing: 24) {
-            // Animated icon
-            Image(systemName: "photo.on.rectangle.angled")
-                .font(.system(size: 70))
-                .foregroundStyle(SemanticColor.primary.gradient)
-                .symbolEffect(.bounce, options: .repeating.speed(0.3), value: isAnimating)
+    // MARK: - Toolbar
 
-            VStack(spacing: 8) {
-                Text("No Screenshots Found")
-                    .font(.title2.bold())
-
-                Text("Take some screenshots and they'll appear here organized into smart collections.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-
-            // Open Photos button
-            Button(action: {
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
                 HapticManager.shared.lightTap()
-                openPhotosApp()
-            }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Open Photos")
-                        .font(.headline)
+                showReview = true
+            } label: {
+                Image(systemName: "rectangle.stack.badge.play.fill")
+            }
+            .disabled(model.unreviewedScreenshots.isEmpty)
+            .accessibilityLabel(Brand.Copy.Banners.reviewCTA)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Picker(Brand.Copy.Home.sortMenu, selection: Binding(
+                    get: { model.collectionsSort },
+                    set: { model.collectionsSort = $0 }
+                )) {
+                    ForEach(CollectionsSortOption.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-                .background(SemanticColor.primary.gradient)
-                .cornerRadius(12)
+                Divider()
+                Button {
+                    model.togglePause()
+                } label: {
+                    Label(model.progress.isPaused ? Brand.Copy.Home.resume : Brand.Copy.Home.pause,
+                          systemImage: model.progress.isPaused ? "play.fill" : "pause.fill")
+                }
+                Button {
+                    showReanalyzeConfirm = true
+                } label: {
+                    Label(Brand.Copy.Home.reanalyze, systemImage: "arrow.triangle.2.circlepath")
+                }
+                #if DEBUG
+                NavigationLink {
+                    EvaluationView()
+                } label: {
+                    Label("Evaluation (debug)", systemImage: "ladybug")
+                }
+                #endif
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
-            .accessibilityLabel("Open Photos app")
-            .accessibilityHint("Opens the Photos app where you can take screenshots")
-        }
-        .onAppear {
-            if !reduceMotion {
-                isAnimating = true
-            }
-        }
-    }
-
-    private func openPhotosApp() {
-        if let url = URL(string: "photos-redirect://") {
-            UIApplication.shared.open(url)
+            .accessibilityLabel(Brand.Copy.Home.moreMenu)
         }
     }
 }
 
-// MARK: - Legacy Empty State (kept for backward compatibility)
+// MARK: - Shelf
 
-struct EmptyStateView: View {
+private struct CategoryShelf: View {
+    let group: CategoryGroup
+    let collections: [ScreenshotCollection]
+    let zoomNamespace: Namespace.ID
+
     var body: some View {
-        EnhancedEmptyStateView()
+        VStack(alignment: .leading, spacing: Space.sm) {
+            ShelfHeader(title: group.rawValue, systemImage: group.icon, tint: group.color, count: collections.count)
+                .padding(.horizontal, Space.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: Space.sm) {
+                    ForEach(collections) { collection in
+                        NavigationLink(value: collection.kind) {
+                            CollectionCard(collection: collection, tint: collection.category.color, zoomNamespace: zoomNamespace)
+                        }
+                        .pressable()
+                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                            content
+                                .scaleEffect(phase.isIdentity ? 1 : 0.94)
+                                .opacity(phase.isIdentity ? 1 : 0.75)
+                        }
+                    }
+                }
+                .padding(.horizontal, Space.gutter)
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled()
+        }
     }
 }
 
-// MARK: - Legacy Processing Indicator
-
-struct ProcessingIndicatorView: View {
-    let progress: String
-    let isPaused: Bool
-    let onPauseToggle: () -> Void
+struct ShelfHeader: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let count: Int
 
     var body: some View {
-        EnhancedProcessingIndicatorView(
-            progress: progress,
-            totalProcessed: 0,
-            totalToProcess: 0,
-            isPaused: isPaused,
-            onPauseToggle: onPauseToggle
-        )
+        HStack(spacing: Space.xs) {
+            Image(systemName: systemImage)
+                .font(.dsCaption)
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(tint.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title)
+                .font(.dsTitle2)
+                .foregroundStyle(Palette.ink)
+            Text(count.formatted())
+                .font(.dsCaption)
+                .foregroundStyle(Palette.inkSecondary)
+                .padding(.horizontal, Space.xs)
+                .padding(.vertical, 2)
+                .background(Palette.hairline, in: Capsule())
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - Cards
+
+/// Collection card with a live 2×2 mosaic of its newest screenshots.
+struct CollectionCard: View {
+    let collection: ScreenshotCollection
+    let tint: Color
+    let zoomNamespace: Namespace.ID
+
+    private let width: CGFloat = 156
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            MosaicThumbnail(screenshots: Array(collection.screenshots.prefix(4)), tint: tint, size: width)
+                .overlay(alignment: .topLeading) {
+                    Image(systemName: collection.icon)
+                        .font(.dsCaption)
+                        .foregroundStyle(.white)
+                        .padding(Space.xs)
+                        .background(tint.gradient, in: Circle())
+                        .padding(Space.xs)
+                }
+                .matchedTransitionSource(id: collection.kind.id, in: zoomNamespace)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(collection.title)
+                    .font(.dsHeadline)
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                Text(Brand.screenshots(collection.count))
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.inkSecondary)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, Space.xxs)
+        }
+        .frame(width: width)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(collection.title), \(Brand.screenshots(collection.count))")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// 2×2 grid of thumbnails (fewer tiles when the collection is small).
+struct MosaicThumbnail: View {
+    let screenshots: [Screenshot]
+    let tint: Color
+    let size: CGFloat
+
+    var body: some View {
+        let spacing: CGFloat = 2
+        let half = (size - spacing) / 2
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(tint.opacity(0.14))
+            if screenshots.count >= 4 {
+                VStack(spacing: spacing) {
+                    HStack(spacing: spacing) {
+                        tile(0, half)
+                        tile(1, half)
+                    }
+                    HStack(spacing: spacing) {
+                        tile(2, half)
+                        tile(3, half)
+                    }
+                }
+            } else if let first = screenshots.first {
+                AsyncThumbnail(asset: first.asset, pointSize: size, placeholderTint: tint)
+                    .frame(width: size, height: size)
+            } else {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.dsTitle)
+                    .foregroundStyle(tint.opacity(0.6))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func tile(_ index: Int, _ side: CGFloat) -> some View {
+        AsyncThumbnail(asset: screenshots[index].asset, pointSize: side, placeholderTint: tint)
+            .frame(width: side, height: side)
+    }
+}
+
+// MARK: - Propagation
+
+private struct PropagationCard: View {
+    let suggestion: PropagationSuggestion
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: Space.sm) {
+            MosaicThumbnail(screenshots: model.library.screenshots(ids: Array(suggestion.ids.prefix(4))), tint: suggestion.category.color, size: 56)
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text(Brand.Copy.Propagation.title(suggestion.ids.count, suggestion.category.displayName))
+                    .font(.dsHeadline)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: Space.xs) {
+                    Button(Brand.Copy.Propagation.accept) {
+                        model.acceptPropagation(suggestion)
+                    }
+                    .buttonStyle(.brand(.primary, size: .compact))
+                    Button(Brand.Copy.Propagation.decline) {
+                        model.propagationSuggestion = nil
+                    }
+                    .buttonStyle(.brand(.ghost, size: .compact))
+                }
+            }
+        }
+        .padding(Space.md)
+        .dsCard(tint: suggestion.category.color)
+    }
+}
+
+// MARK: - Empty
+
+private struct EmptyLibraryView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bounce = false
+
+    var body: some View {
+        VStack(spacing: Space.md) {
+            BrandMark(size: 96)
+                .symbolEffect(.bounce, value: bounce)
+            Text(Brand.Copy.Empty.noScreenshotsTitle)
+                .font(.dsTitle)
+                .foregroundStyle(Palette.ink)
+            Text(Brand.Copy.Empty.noScreenshotsBody)
+                .font(.dsBody)
+                .foregroundStyle(Palette.inkSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, Space.xl)
+        .frame(maxWidth: .infinity)
+        .onAppear { if !reduceMotion { bounce.toggle() } }
     }
 }

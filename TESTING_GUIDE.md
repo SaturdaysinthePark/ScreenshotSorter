@@ -5,7 +5,7 @@
 ### Step 1: Test Screenshots in the App
 1. Run the app on simulator or device
 2. Import/categorize screenshots
-3. Watch Xcode console for debug output
+3. Open the home ⋯ menu → "Evaluation (debug)" to see what the pipeline extracted, and export real cases as golden fixtures
 
 ### Step 2: Fill Out the CSV
 

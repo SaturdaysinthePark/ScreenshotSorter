@@ -1,61 +1,57 @@
 import Photos
 import UIKit
 
-class PhotoLibraryService: ObservableObject {
+/// Thin PhotoKit wrapper: authorization, fetching, full-size loading and deletion.
+/// Analysis image loading lives in `PhotoImageLoader`; grid thumbnails in `ThumbnailLoader`.
+final class PhotoLibraryService {
     static let shared = PhotoLibraryService()
 
-    @Published var authorizationStatus: PHAuthorizationStatus = .notDetermined
+    private init() {}
 
-    private init() {
-        checkAuthorizationStatus()
+    var authorizationStatus: PHAuthorizationStatus {
+        PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
 
-    func checkAuthorizationStatus() {
-        authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    var hasAccess: Bool {
+        let status = authorizationStatus
+        return status == .authorized || status == .limited
     }
 
     func requestAuthorization(completion: @escaping (Bool) -> Void) {
-        PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
             DispatchQueue.main.async {
-                self?.authorizationStatus = status
                 completion(status == .authorized || status == .limited)
             }
         }
     }
 
-    func fetchScreenshots(completion: @escaping ([PHAsset]) -> Void) {
-        // Always check current authorization status
-        let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        #if DEBUG
-        print("📸 PhotoLibraryService.fetchScreenshots() - Authorization: \(currentStatus.rawValue)")
-        #endif
+    func requestAuthorization() async -> Bool {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        return status == .authorized || status == .limited
+    }
 
-        guard currentStatus == .authorized || currentStatus == .limited else {
-            #if DEBUG
-            print("📸 Authorization denied, returning empty array")
-            #endif
-            completion([])
-            return
-        }
+    /// Fetch options for every screenshot, newest first.
+    static func screenshotFetchOptions() -> PHFetchOptions {
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "(mediaSubtypes & %d) != 0", PHAssetMediaSubtype.photoScreenshot.rawValue)
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        return options
+    }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let fetchOptions = PHFetchOptions()
-            fetchOptions.predicate = NSPredicate(format: "mediaSubtype == %d", PHAssetMediaSubtype.photoScreenshot.rawValue)
-            fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+    func fetchScreenshotResult() -> PHFetchResult<PHAsset> {
+        PHAsset.fetchAssets(with: .image, options: PhotoLibraryService.screenshotFetchOptions())
+    }
 
-            let results = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-            var screenshots: [PHAsset] = []
-
-            results.enumerateObjects { asset, _, _ in
-                screenshots.append(asset)
-            }
-
-            #if DEBUG
-            print("📸 PhotoLibraryService found \(screenshots.count) screenshots")
-            #endif
-
-            DispatchQueue.main.async {
-                completion(screenshots)
+    /// All screenshots, newest first (enumerated off the main thread).
+    func fetchScreenshots() async -> [PHAsset] {
+        guard hasAccess else { return [] }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = self.fetchScreenshotResult()
+                var assets: [PHAsset] = []
+                assets.reserveCapacity(result.count)
+                result.enumerateObjects { asset, _, _ in assets.append(asset) }
+                continuation.resume(returning: assets)
             }
         }
     }
@@ -77,6 +73,7 @@ class PhotoLibraryService: ObservableObject {
         }
     }
 
+    /// Full-resolution image for the zoomable detail view.
     func loadFullSizeImage(for asset: PHAsset, completion: @escaping (UIImage?) -> Void) {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
@@ -95,99 +92,21 @@ class PhotoLibraryService: ObservableObject {
         }
     }
 
+    /// Deletes assets (the system shows its own confirmation). Store cleanup happens via
+    /// `PhotoLibraryObserver` when PhotoKit reports the removal.
     func deleteAssets(_ assets: [PHAsset], completion: @escaping (Bool, Error?) -> Void) {
-        // Store asset IDs for cache cleanup
-        let assetIds = assets.map { $0.localIdentifier }
-
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.deleteAssets(assets as NSArray)
         }) { success, error in
-            // Clean up cache on successful deletion
-            if success {
-                let cacheService = CategorizationCacheService.shared
-                for assetId in assetIds {
-                    cacheService.removeCachedCategories(for: assetId)
-                }
-                #if DEBUG
-                print("🗑️ Cleaned up cache for \(assetIds.count) deleted assets")
-                #endif
-            }
-
             DispatchQueue.main.async {
                 completion(success, error)
             }
         }
     }
 
-    // MARK: - Async/Await Variants
-
-    /// Load image for categorization with async/await
-    func loadImageAsync(for asset: PHAsset, targetSize: CGSize = CGSize(width: 1024, height: 1024)) async throws -> UIImage {
-        return try await withCheckedThrowingContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.deliveryMode = .highQualityFormat
-            options.isNetworkAccessAllowed = true
-            options.isSynchronous = false
-
-            var hasResumed = false
-            let lock = NSLock()
-
-            // Timeout after 10 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                lock.lock()
-                defer { lock.unlock() }
-
-                if !hasResumed {
-                    hasResumed = true
-                    #if DEBUG
-                    print("⏱️ Image load timeout for asset: \(asset.localIdentifier)")
-                    #endif
-                    continuation.resume(throwing: PhotoLibraryError.timeout)
-                }
-            }
-
-            PHImageManager.default().requestImage(
-                for: asset,
-                targetSize: targetSize,
-                contentMode: .aspectFill,
-                options: options
-            ) { image, info in
-                lock.lock()
-                defer { lock.unlock() }
-
-                guard !hasResumed else { return }
-                hasResumed = true
-
-                if let error = info?[PHImageErrorKey] as? Error {
-                    continuation.resume(throwing: error)
-                } else if let image = image {
-                    continuation.resume(returning: image)
-                } else {
-                    continuation.resume(throwing: PhotoLibraryError.imageNotFound)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Error Types
-
-enum PhotoLibraryError: Error {
-    case timeout
-    case imageNotFound
-    case unauthorized
-    case unknown
-
-    var localizedDescription: String {
-        switch self {
-        case .timeout:
-            return "Image loading timed out"
-        case .imageNotFound:
-            return "Image not found or unavailable"
-        case .unauthorized:
-            return "Photo library access not authorized"
-        case .unknown:
-            return "Unknown error occurred"
+    func deleteAssets(_ assets: [PHAsset]) async -> Bool {
+        await withCheckedContinuation { continuation in
+            deleteAssets(assets) { success, _ in continuation.resume(returning: success) }
         }
     }
 }

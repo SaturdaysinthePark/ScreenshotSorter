@@ -63,7 +63,7 @@ actor AnalysisScheduler {
     private var completionTimes: [Date] = []
     private var modelRetryIDs: [String] = []
 
-    let events: AsyncStream<SchedulerEvent>
+    nonisolated let events: AsyncStream<SchedulerEvent>
     private let eventContinuation: AsyncStream<SchedulerEvent>.Continuation
 
     init(pipeline: AnalysisPipeline, store: AnalysisStore) {

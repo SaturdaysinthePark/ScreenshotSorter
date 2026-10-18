@@ -65,8 +65,8 @@ actor AnalysisStore {
     private static let logger = Logger(subsystem: "sabtain.ScreenshotSorter", category: "AnalysisStore")
 
     private let db: SQLiteDatabase
-    let isFTSAvailable: Bool
-    let isTrigramAvailable: Bool
+    nonisolated let isFTSAvailable: Bool
+    nonisolated let isTrigramAvailable: Bool
 
     static func defaultURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -126,6 +126,7 @@ actor AnalysisStore {
             tags_text TEXT NOT NULL DEFAULT '',
             tags BLOB,
             entities BLOB,
+            entity_types TEXT NOT NULL DEFAULT '',
             is_reviewed INTEGER NOT NULL DEFAULT 0,
             needs_network INTEGER NOT NULL DEFAULT 0,
             fail_count INTEGER NOT NULL DEFAULT 0,
@@ -240,16 +241,17 @@ actor AnalysisStore {
         let tagsText = record.tags.map(\.value).joined(separator: AnalysisStore.tagSeparator)
         try db.run("""
         INSERT INTO assets(id, created_at, tier, vision_version, rules_version, fm_version, app, app_conf, title, summary,
-                           ocr_text, lang, features, insight, categories, tags_text, tags, entities, is_reviewed,
-                           needs_network, fail_count, analyzed_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                           ocr_text, lang, features, insight, categories, tags_text, tags, entities, entity_types,
+                           is_reviewed, needs_network, fail_count, analyzed_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
             created_at = excluded.created_at, tier = excluded.tier, vision_version = excluded.vision_version,
             rules_version = excluded.rules_version, fm_version = excluded.fm_version, app = excluded.app,
             app_conf = excluded.app_conf, title = excluded.title, summary = excluded.summary,
             ocr_text = excluded.ocr_text, lang = excluded.lang, features = excluded.features,
             insight = excluded.insight, categories = excluded.categories, tags_text = excluded.tags_text,
-            tags = excluded.tags, entities = excluded.entities, is_reviewed = excluded.is_reviewed,
+            tags = excluded.tags, entities = excluded.entities, entity_types = excluded.entity_types,
+            is_reviewed = excluded.is_reviewed,
             needs_network = excluded.needs_network, fail_count = excluded.fail_count, analyzed_at = excluded.analyzed_at
         """, [
             .text(record.id),
@@ -270,6 +272,7 @@ actor AnalysisStore {
             .text(tagsText),
             AnalysisStore.encode(record.tags),
             AnalysisStore.encode(record.entities),
+            .text(Set(record.entities.map(\.type.rawValue)).sorted().joined(separator: ",")),
             .int(record.isReviewed ? 1 : 0),
             .int(record.needsNetwork ? 1 : 0),
             .int(record.failCount),
@@ -379,6 +382,16 @@ actor AnalysisStore {
             ))
         }
         return summaries
+    }
+
+    /// Entity types per asset (for "with links" style search filters)
+    func entityTypeMap() -> [String: Set<EntityType>] {
+        var map: [String: Set<EntityType>] = [:]
+        try? db.query("SELECT id, entity_types FROM assets WHERE entity_types != ''") { row in
+            guard let id = row.text(0), let text = row.text(1) else { return }
+            map[id] = Set(text.split(separator: ",").compactMap { EntityType(rawValue: String($0)) })
+        }
+        return map
     }
 
     func pipelineStates() -> [String: PipelineState] {

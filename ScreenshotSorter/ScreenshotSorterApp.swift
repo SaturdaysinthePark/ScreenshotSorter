@@ -2,18 +2,22 @@ import SwiftUI
 
 @main
 struct ScreenshotSorterApp: App {
-    @StateObject private var viewModel = CollectionsViewModel()
+    @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // Background task handlers must be registered before launch completes
+        BackgroundAnalysisManager.register()
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(viewModel: viewModel)
+            ContentView()
+                .environment(model)
+                .tint(Palette.brand)
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
-                // Save snapshot when app goes to background
-                viewModel.saveStateSnapshot()
-            }
+            model.handleScenePhase(newPhase)
         }
     }
 }
