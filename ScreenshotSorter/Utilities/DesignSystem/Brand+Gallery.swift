@@ -44,7 +44,14 @@ extension Brand.Copy {
             }
             return "Screenshot, \(date)"
         }
+        static func propagationTitle(_ count: Int, _ category: String) -> String {
+            "Add \(count) similar \(count == 1 ? "screenshot" : "screenshots") to \(category)?"
+        }
         static let propagationBody: String = "They look a lot like the ones you just sorted."
+        static let propagationAdd: String = "Add them"
+        static let propagationNotNow: String = "Not now"
+        static let allEyebrow: String = "Everything"
+        static let smartEyebrow: String = "Smart collection"
     }
 
     // MARK: Photo detail
@@ -78,6 +85,8 @@ extension Brand.Copy {
         static let reading: String = "Still reading this one…"
         static let photoHint: String = "Double-tap to zoom. Swipe down to close."
         static func zoomLevel(_ percent: Int) -> String { "Zoomed to \(percent) percent" }
+        static let zoomIn: String = "Zoom in"
+        static let zoomOut: String = "Zoom out"
         static let openHint: String = "Opens in another app"
         static let copyHint: String = "Copies to the clipboard"
         static let similarHint: String = "Jumps to this screenshot"
