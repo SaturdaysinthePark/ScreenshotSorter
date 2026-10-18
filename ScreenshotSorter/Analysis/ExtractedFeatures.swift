@@ -24,6 +24,21 @@ struct OCRLine: Codable, Sendable, Hashable {
     /// Normalized, top-left origin
     let box: CGRect
     let zone: ScreenZone
+
+    // Explicit so we don't depend on CGRect's Hashable conformance in the SDK
+    static func == (lhs: OCRLine, rhs: OCRLine) -> Bool {
+        lhs.text == rhs.text && lhs.confidence == rhs.confidence && lhs.box == rhs.box && lhs.zone == rhs.zone
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(confidence)
+        hasher.combine(box.origin.x)
+        hasher.combine(box.origin.y)
+        hasher.combine(box.size.width)
+        hasher.combine(box.size.height)
+        hasher.combine(zone)
+    }
 }
 
 struct VisionLabel: Codable, Sendable, Hashable {

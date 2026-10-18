@@ -37,7 +37,7 @@ struct EvaluationView: View {
                         if let app = record.app {
                             Text("app: \(app) (\(String(format: "%.2f", record.appConfidence)))").font(.caption)
                         }
-                        Text("labels: " + (record.features?.labels.prefix(5).map { "\($0.identifier) \(Int($0.confidence * 100))%" }.joined(separator: ", ") ?? "-"))
+                        Text(labelsLine(record))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Text("tags: " + record.tags.map(\.value).joined(separator: ", "))
@@ -75,6 +75,14 @@ struct EvaluationView: View {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("golden_export.json")
         try? data.write(to: url)
         return url
+    }
+
+    private func labelsLine(_ record: AnalysisRecord) -> String {
+        guard let labels = record.features?.labels, !labels.isEmpty else { return "labels: -" }
+        let parts: [String] = labels.prefix(5).map { label in
+            "\(label.identifier) \(Int(label.confidence * 100))%"
+        }
+        return "labels: " + parts.joined(separator: ", ")
     }
 
     private func zoneName(_ zone: ScreenZone) -> String {

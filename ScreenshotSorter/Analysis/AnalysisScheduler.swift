@@ -273,15 +273,21 @@ actor AnalysisScheduler {
         inFlight.remove(id)
         guard !removed.contains(id) else { return }
         queuedFast.remove(id)
+        // Already deep-queued items were skipped by `nextDeep` while their fast pass was pending,
+        // so they must be re-appended or they'd stay in `queuedDeep` forever (never idle).
+        var continueToDeep = queuedDeep.contains(id)
         if case .finished(let record) = result {
             pending.append(record)
             progress.fastCompleted += 1
             completionTimes.append(Date())
             // Every successfully seen item continues to the deep lane
-            if record.tier != .failed && record.tier != .deep && !queuedDeep.contains(id) {
-                queuedDeep.insert(id)
-                deepQueue.append(id)
+            if record.tier != .failed && record.tier != .deep {
+                continueToDeep = true
             }
+        }
+        if continueToDeep {
+            queuedDeep.insert(id)
+            deepQueue.append(id)
         }
         afterCompletion()
     }
@@ -296,6 +302,8 @@ actor AnalysisScheduler {
             completionTimes.append(Date())
         }
         if retryModel { modelRetryIDs.append(id) }
+        // Re-queued for a fast pass while in flight (e.g. edited): `nextFast` skipped it then
+        if queuedFast.contains(id) { urgent.append(id) }
         afterCompletion()
     }
 

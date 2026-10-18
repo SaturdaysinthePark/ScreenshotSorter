@@ -101,13 +101,13 @@ final class AppModel {
 
     // MARK: Services
 
-    @ObservationIgnored let store: AnalysisStore
-    @ObservationIgnored let vectors: VectorIndex
-    @ObservationIgnored let learner: UserFeedbackLearner
-    @ObservationIgnored let pipeline: AnalysisPipeline
-    @ObservationIgnored let scheduler: AnalysisScheduler
-    @ObservationIgnored let searchService: SearchService
-    @ObservationIgnored let smartEngine: SmartCollectionEngine
+    let store: AnalysisStore
+    let vectors: VectorIndex
+    let learner: UserFeedbackLearner
+    let pipeline: AnalysisPipeline
+    let scheduler: AnalysisScheduler
+    let searchService: SearchService
+    let smartEngine: SmartCollectionEngine
     @ObservationIgnored private var observer: PhotoLibraryObserver?
     @ObservationIgnored private var listeners: [Task<Void, Never>] = []
     @ObservationIgnored private var searchTask: Task<Void, Never>?
