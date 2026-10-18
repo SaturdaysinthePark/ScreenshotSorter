@@ -43,6 +43,13 @@ struct Screenshot: Identifiable, Hashable {
     var lastReviewedDate: Date?
     var processingStatus: ScreenshotStatus = .unprocessed
 
+    // Rich analysis (populated by the analysis pipeline)
+    var app: String?
+    var tags: [String] = []
+    var title: String?
+    var summary: String?
+    var tier: AnalysisTier = .none
+
     init(asset: PHAsset, categories: [ScreenshotCategory]) {
         self.id = asset.localIdentifier
         self.asset = asset
@@ -61,21 +68,28 @@ struct Screenshot: Identifiable, Hashable {
         self.creationDate = asset.creationDate ?? Date()
     }
 
-    /// Initialize from cached snapshot data with a pre-fetched PHAsset
-    init(cachedData: CachedScreenshotData, asset: PHAsset) {
-        self.id = cachedData.assetIdentifier
+    /// Build from a PHAsset plus (optional) persisted analysis summary
+    init(asset: PHAsset, summary: RecordSummary?) {
+        self.id = asset.localIdentifier
         self.asset = asset
-        self.categories = cachedData.categories
-        self.categoriesWithConfidence = cachedData.categoriesWithConfidence.map {
-            CategoryWithConfidence(
-                category: $0.category,
-                confidence: ConfidenceLevel(score: $0.score),
-                score: $0.score
-            )
+        self.creationDate = asset.creationDate ?? summary?.creationDate ?? Date()
+        if let summary, summary.tier != .none {
+            let scored = summary.categories.map {
+                CategoryWithConfidence(category: $0.category, confidence: ConfidenceLevel(score: $0.score), score: $0.score)
+            }
+            self.categoriesWithConfidence = scored
+            self.categories = scored.map { $0.category }
+            self.processingStatus = .processed
+        } else {
+            self.categoriesWithConfidence = []
+            self.categories = []
+            self.processingStatus = .unprocessed
         }
-        self.creationDate = cachedData.creationDate
-        self.isReviewed = cachedData.isReviewed
-        self.processingStatus = cachedData.isProcessed ? .processed : .unprocessed
+        self.app = summary?.app
+        self.tags = summary?.tags ?? []
+        self.title = summary?.title
+        self.tier = summary?.tier ?? .none
+        self.isReviewed = summary?.isReviewed ?? false
     }
 
     func hash(into hasher: inout Hasher) {
@@ -92,7 +106,7 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
 
     // Core categories
     case events = "Events"
-    case codes = "Code & QR"
+    case codes = "QR Codes"
     case receipts = "Receipts"
     case directions = "Directions"
     case places = "Places"
@@ -176,6 +190,15 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
     case news = "News & Articles"
     case notifications = "Notifications"
     case iosHomeScreens = "iOS Home Screens"
+    case settings = "Settings"
+    case errors = "Errors & Bugs"
+
+    // Added in the 2026 ML pass
+    case finance = "Money & Finance"
+    case tickets = "Tickets & Passes"
+    case orders = "Orders & Shipping"
+    case programming = "Programming"
+    case aiChats = "AI Chats"
 
     case other = "Other"
 
@@ -267,6 +290,13 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
         case .news: return "newspaper.fill"
         case .notifications: return "bell.fill"
         case .iosHomeScreens: return "apps.iphone"
+        case .settings: return "gearshape.fill"
+        case .errors: return "exclamationmark.triangle.fill"
+        case .finance: return "creditcard.fill"
+        case .tickets: return "ticket.fill"
+        case .orders: return "shippingbox.fill"
+        case .programming: return "chevron.left.forwardslash.chevron.right"
+        case .aiChats: return "sparkles"
 
         case .other: return "square.grid.2x2.fill"
         }
@@ -274,6 +304,55 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
 
     var group: CategoryGroup {
         CategoryGroup.group(for: self)
+    }
+
+    /// Display name (alias of rawValue, which may change between releases)
+    var displayName: String { rawValue }
+
+    /// Stable persistence key (the case name). Never persist `rawValue`.
+    var key: String { String(describing: self) }
+
+    private static let byKey: [String: ScreenshotCategory] = Dictionary(
+        uniqueKeysWithValues: ScreenshotCategory.allCases.map { ($0.key, $0) }
+    )
+
+    /// Legacy display names that have since been renamed
+    private static let legacyNames: [String: ScreenshotCategory] = [
+        "Code & QR": .codes
+    ]
+
+    init?(key: String) {
+        guard let category = ScreenshotCategory.byKey[key] else { return nil }
+        self = category
+    }
+
+    /// Decode a value written by any app version (key, current display name, or legacy display name)
+    init?(persisted value: String) {
+        if let category = ScreenshotCategory(key: value) ?? ScreenshotCategory(rawValue: value) ?? ScreenshotCategory.legacyNames[value] {
+            self = category
+        } else {
+            return nil
+        }
+    }
+
+    /// Categories the classifier can assign (excludes the synthetic `.all`)
+    static var assignable: [ScreenshotCategory] {
+        allCases.filter { $0 != .all }
+    }
+}
+
+// MARK: - Codable (stable keys, tolerant decoding)
+
+extension ScreenshotCategory: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        self = ScreenshotCategory(persisted: value) ?? .other
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(key)
     }
 }
 
@@ -319,7 +398,7 @@ enum CategoryGroup: String, CaseIterable {
             return .socialMedia
 
         // Communication
-        case .imessage, .whatsapp, .signal, .telegram, .discord, .slack, .email, .gmail:
+        case .imessage, .whatsapp, .signal, .telegram, .discord, .slack, .email, .gmail, .aiChats:
             return .communication
 
         // Clothing & Accessories
@@ -327,7 +406,7 @@ enum CategoryGroup: String, CaseIterable {
             return .clothingAccessories
 
         // Products & Tech
-        case .vehicles, .electronics, .stores:
+        case .vehicles, .electronics, .stores, .orders:
             return .productsTech
 
         // Home & Living
@@ -344,11 +423,11 @@ enum CategoryGroup: String, CaseIterable {
             return .placesTravel
 
         // Events & Planning
-        case .events, .codes:
+        case .events, .codes, .tickets:
             return .eventsPlanning
 
         // Work & Productivity
-        case .documents, .notes, .receipts:
+        case .documents, .notes, .receipts, .finance, .programming:
             return .workProductivity
 
         // Media & Entertainment
@@ -365,7 +444,7 @@ enum CategoryGroup: String, CaseIterable {
             return .information
 
         // System
-        case .notifications, .iosHomeScreens:
+        case .notifications, .iosHomeScreens, .settings, .errors:
             return .system
 
         // Other

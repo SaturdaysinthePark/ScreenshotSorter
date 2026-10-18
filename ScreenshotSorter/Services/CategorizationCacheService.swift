@@ -161,21 +161,3 @@ struct CacheStats {
     let validEntries: Int
 }
 
-// MARK: - ScreenshotCategory Codable Conformance
-
-extension ScreenshotCategory: Codable {
-    enum CodingKeys: String, CodingKey {
-        case rawValue
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let rawValue = try container.decode(String.self)
-        self = ScreenshotCategory(rawValue: rawValue) ?? .other
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(self.rawValue)
-    }
-}
