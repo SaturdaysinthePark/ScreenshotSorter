@@ -1,12 +1,16 @@
 import CoreGraphics
 import Foundation
 import NaturalLanguage
+import os
 @preconcurrency import Vision
 
 /// Runs all Vision requests for one image through a single handler (the image is decoded once).
 enum VisionExtractor {
     private static let fastQueue = DispatchQueue(label: "analysis.vision.fast", qos: .userInitiated, attributes: .concurrent)
     private static let deepQueue = DispatchQueue(label: "analysis.vision.deep", qos: .utility, attributes: .concurrent)
+    private static let logger = Logger(subsystem: "sabtain.ScreenshotSorter", category: "Vision")
+    /// Request types already reported as failing, so a 25k-screenshot library logs each once.
+    private static let reportedFailures = OSAllocatedUnfairLock(initialState: Set<String>())
 
     struct Output: Sendable {
         var features: ExtractedFeatures
@@ -36,6 +40,14 @@ enum VisionExtractor {
         }
     }
 
+    private static func reportFailure(of request: VNRequest, _ error: Error) {
+        let name = String(describing: type(of: request))
+        let isNew = reportedFailures.withLock { $0.insert(name).inserted }
+        if isNew {
+            logger.error("\(name, privacy: .public) unavailable, continuing without it: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     private static func extract(_ image: CGImage, accurate: Bool, featurePrint wantsFeaturePrint: Bool) throws -> Output {
         let classify = VNClassifyImageRequest()
 
@@ -53,7 +65,21 @@ enum VisionExtractor {
         if wantsFeaturePrint { requests.append(print) }
 
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
-        try handler.perform(requests)
+        do {
+            try handler.perform(requests)
+        } catch {
+            // One failing request fails the whole batch (the iOS 26 simulator has no inference
+            // context for the classifier, faces or feature prints). Redo them one by one so the
+            // rest still count; only OCR is required, the rules can work from text alone.
+            for request in requests where request !== text {
+                do {
+                    try handler.perform([request])
+                } catch {
+                    reportFailure(of: request, error)
+                }
+            }
+            try handler.perform([text])
+        }
 
         var features = ExtractedFeatures()
         features.pixelWidth = image.width

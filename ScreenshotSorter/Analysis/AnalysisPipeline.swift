@@ -20,6 +20,7 @@ struct AnalysisPipeline: Sendable {
     let learner: UserFeedbackLearner
 
     private static let signposter = OSSignposter(subsystem: "sabtain.ScreenshotSorter", category: .pointsOfInterest)
+    private static let logger = Logger(subsystem: "sabtain.ScreenshotSorter", category: "Pipeline")
 
     enum Result: Sendable {
         case finished(AnalysisRecord)
@@ -59,9 +60,12 @@ struct AnalysisPipeline: Sendable {
         } catch ImageLoaderError.cancelled {
             return .skipped
         } catch {
+            AnalysisPipeline.logger.error("Fast pass failed for \(id, privacy: .public) (attempt \(record.failCount + 1)): \(String(describing: error), privacy: .public)")
             record.failCount += 1
-            if record.failCount >= AnalysisPipeline.maxFailures && record.tier == .none {
+            if record.failCount >= AnalysisPipeline.maxFailures && (record.tier == .none || record.tier == .failed) {
                 record.tier = .failed
+                // Stamped so a later extraction change (`PipelineVersion.vision`) retries it.
+                record.visionVersion = PipelineVersion.vision
             }
         }
         record.analyzedAt = Date()
@@ -140,9 +144,12 @@ struct AnalysisPipeline: Sendable {
         } catch ImageLoaderError.cancelled {
             return (.skipped, false)
         } catch {
+            AnalysisPipeline.logger.error("Deep pass failed for \(id, privacy: .public) (attempt \(record.failCount + 1)): \(String(describing: error), privacy: .public)")
             record.failCount += 1
-            if record.failCount >= AnalysisPipeline.maxFailures && record.tier == .none {
+            if record.failCount >= AnalysisPipeline.maxFailures && (record.tier == .none || record.tier == .failed) {
                 record.tier = .failed
+                // Stamped so a later extraction change (`PipelineVersion.vision`) retries it.
+                record.visionVersion = PipelineVersion.vision
             }
         }
         record.analyzedAt = Date()

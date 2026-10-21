@@ -59,6 +59,8 @@ struct PropagationSuggestion: Identifiable, Equatable {
     let id = UUID()
     let category: ScreenshotCategory
     let ids: [String]
+    /// Correction group that prompted it; undoing that group withdraws the suggestion.
+    var sourceGroup: String?
 }
 
 /// App-wide state and the single entry point for views.
@@ -86,6 +88,8 @@ final class AppModel {
     }
     private(set) var reviewBannerDismissedAt: Date? = UserDefaults.standard.object(forKey: AppModel.reviewDismissedKey) as? Date
     var propagationSuggestion: PropagationSuggestion?
+    /// Undone correction groups, so a suggestion still being computed for one never appears.
+    private var undoneGroups: Set<String> = []
 
     // Search
     var searchText = "" {
@@ -194,7 +198,7 @@ final class AppModel {
                 fast.append(item)
                 continue
             }
-            if state.tier == .failed { continue }
+            if state.tier == .failed && state.visionVersion >= PipelineVersion.vision { continue }
             if state.tier == .none || state.visionVersion < PipelineVersion.vision {
                 fast.append(item)
             } else if state.tier == .fast || state.needsNetwork {
@@ -413,6 +417,10 @@ final class AppModel {
     }
 
     func undoCorrection(group: String, ids: [String]) {
+        undoneGroups.insert(group)
+        if propagationSuggestion?.sourceGroup == group {
+            propagationSuggestion = nil
+        }
         Task {
             await learner.undo(groupID: group)
             await rescoreRecords(ids: ids)
@@ -448,14 +456,14 @@ final class AppModel {
             if !neighbours.isEmpty {
                 await rescoreRecords(ids: Array(neighbours))
             }
-            if let category {
-                await offerPropagation(for: ids, category: category)
+            if let category, let group = corrections.first?.groupID {
+                await offerPropagation(for: ids, category: category, group: group)
             }
         }
     }
 
     /// After adding a category, offer to file very similar screenshots the same way.
-    private func offerPropagation(for ids: [String], category: ScreenshotCategory) async {
+    private func offerPropagation(for ids: [String], category: ScreenshotCategory, group: String) async {
         var candidates: [String: Float] = [:]
         for id in ids.prefix(10) {
             for neighbour in await vectors.neighbours(of: id, k: 20, minimum: 0.82) {
@@ -466,8 +474,8 @@ final class AppModel {
             }
         }
         let ranked = candidates.sorted { $0.value > $1.value }.map(\.key)
-        if ranked.count >= 3 {
-            propagationSuggestion = PropagationSuggestion(category: category, ids: Array(ranked.prefix(24)))
+        if ranked.count >= 3 && !undoneGroups.contains(group) {
+            propagationSuggestion = PropagationSuggestion(category: category, ids: Array(ranked.prefix(24)), sourceGroup: group)
         }
     }
 
