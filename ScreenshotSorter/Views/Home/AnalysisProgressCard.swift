@@ -4,6 +4,7 @@ import SwiftUI
 struct AnalysisProgressCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var progress: AnalysisProgress { model.progress }
 
@@ -14,39 +15,21 @@ struct AnalysisProgressCard: View {
         let isFastPhase = progress.fastRemaining > 0
 
         VStack(alignment: .leading, spacing: Space.sm) {
-            HStack(spacing: Space.sm) {
-                Image(systemName: progress.isPaused ? "pause.circle.fill" : "wand.and.stars")
-                    .font(.dsTitle2)
-                    .foregroundStyle(Palette.brand)
-                    .symbolEffect(.variableColor.iterative, options: .repeating, isActive: !progress.isPaused && !reduceMotion)
-                    .frame(width: 36)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(headline(analyzed: analyzed, total: total, isFastPhase: isFastPhase))
-                        .font(.dsHeadline)
-                        .foregroundStyle(Palette.ink)
-                        .contentTransition(.numericText())
-                    if let detail = detailLine {
-                        Text(detail)
-                            .font(.dsCaption)
-                            .foregroundStyle(Palette.inkSecondary)
-                            .contentTransition(.opacity)
-                    }
+            if dynamicTypeSize.isAccessibilitySize {
+                // Text gets the full width; side by side it would wrap mid-word.
+                HStack(spacing: Space.sm) {
+                    statusIcon
+                    Spacer(minLength: 0)
+                    pauseButton
                 }
-                Spacer(minLength: 0)
-                Button {
-                    HapticManager.shared.lightTap()
-                    Motion.perform(Motion.snappy, reduceMotion: reduceMotion) {
-                        model.togglePause()
-                    }
-                } label: {
-                    Image(systemName: progress.isPaused ? "play.fill" : "pause.fill")
-                        .font(.dsHeadline)
-                        .frame(width: 40, height: 40)
-                        .contentTransition(.symbolEffect(.replace))
+                labels(analyzed: analyzed, total: total, isFastPhase: isFastPhase)
+            } else {
+                HStack(spacing: Space.sm) {
+                    statusIcon
+                    labels(analyzed: analyzed, total: total, isFastPhase: isFastPhase)
+                    Spacer(minLength: 0)
+                    pauseButton
                 }
-                .buttonStyle(.glass)
-                .accessibilityLabel(progress.isPaused ? Brand.Copy.Analysis.resumeLabel : Brand.Copy.Analysis.pauseLabel)
             }
 
             DSProgressBar(progress: isFastPhase ? fraction : deepFraction)
@@ -55,6 +38,45 @@ struct AnalysisProgressCard: View {
         .padding(Space.md)
         .dsCard(tint: Palette.brand)
         .accessibilityElement(children: .contain)
+    }
+
+    private var statusIcon: some View {
+        Image(systemName: progress.isPaused ? "pause.circle.fill" : "wand.and.stars")
+            .font(.dsTitle2)
+            .foregroundStyle(Palette.brand)
+            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: !progress.isPaused && !reduceMotion)
+            .frame(width: 36)
+    }
+
+    private func labels(analyzed: Int, total: Int, isFastPhase: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(headline(analyzed: analyzed, total: total, isFastPhase: isFastPhase))
+                .font(.dsHeadline)
+                .foregroundStyle(Palette.ink)
+                .contentTransition(.numericText())
+            if let detail = detailLine {
+                Text(detail)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.inkSecondary)
+                    .contentTransition(.opacity)
+            }
+        }
+    }
+
+    private var pauseButton: some View {
+        Button {
+            HapticManager.shared.lightTap()
+            Motion.perform(Motion.snappy, reduceMotion: reduceMotion) {
+                model.togglePause()
+            }
+        } label: {
+            Image(systemName: progress.isPaused ? "play.fill" : "pause.fill")
+                .font(.dsHeadline)
+                .frame(width: 40, height: 40)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel(progress.isPaused ? Brand.Copy.Analysis.resumeLabel : Brand.Copy.Analysis.pauseLabel)
     }
 
     private var deepFraction: Double {

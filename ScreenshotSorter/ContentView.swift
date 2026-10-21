@@ -20,8 +20,9 @@ struct ContentView: View {
             }
 
             if !hasCompletedOnboarding && !showSplash {
+                // Appear opaque under the fading splash; fading in too would let home show through.
                 OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
-                    .transition(.opacity)
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
                     .zIndex(2)
             }
 

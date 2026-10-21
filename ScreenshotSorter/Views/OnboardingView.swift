@@ -88,6 +88,8 @@ struct OnboardingView: View {
             Text(Brand.appName)
                 .font(.dsHeadline)
                 .foregroundStyle(Palette.ink)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .lineLimit(1)
                 .accessibilityHidden(true)
             Spacer()
             Button(Brand.Copy.Onboarding.skip) {
@@ -150,6 +152,8 @@ private struct OnboardingPage<Demo: View>: View {
     let tint: Color
     let demo: Demo
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     init(eyebrow: String, title: String, message: String, tint: Color, @ViewBuilder demo: () -> Demo) {
         self.eyebrow = eyebrow
         self.title = title
@@ -161,9 +165,11 @@ private struct OnboardingPage<Demo: View>: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Space.lg) {
+                // At accessibility sizes the demo shrinks so the title and copy start on screen.
                 demo
                     .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-                    .frame(height: 320)
+                    .scaleEffect(dynamicTypeSize.isAccessibilitySize ? 0.62 : 1)
+                    .frame(height: dynamicTypeSize.isAccessibilitySize ? 200 : 320)
                     .frame(maxWidth: .infinity)
 
                 VStack(spacing: Space.sm) {
