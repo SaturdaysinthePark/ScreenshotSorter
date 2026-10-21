@@ -660,7 +660,6 @@ private struct ZoomablePhotoPage: View {
     @State private var dismissTracking: Bool = false
     @State private var lastDismissTranslation: CGSize = .zero
     @State private var lastDismissVelocity: CGSize = .zero
-    @GestureState private var isDismissGestureActive: Bool = false
 
     private var maxScale: CGFloat { 4 }
     private var doubleTapScale: CGFloat { 2.5 }
@@ -720,7 +719,7 @@ private struct ZoomablePhotoPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .gesture(panGesture, including: isZoomed ? .all : .subviews)
-        .simultaneousGesture(dismissGesture, including: isZoomed ? .subviews : .all)
+        .gesture(dismissGesture)
         .simultaneousGesture(magnifyGesture)
         .onTapGesture(count: 2, coordinateSpace: .local) { location in
             toggleZoom(at: location)
@@ -736,11 +735,6 @@ private struct ZoomablePhotoPage: View {
         .onChange(of: isPanning) { _, active in
             if !active {
                 finishPan(velocity: lastPanVelocity)
-            }
-        }
-        .onChange(of: isDismissGestureActive) { _, active in
-            if !active {
-                finishDismiss(translation: lastDismissTranslation, velocity: lastDismissVelocity)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -861,26 +855,22 @@ private struct ZoomablePhotoPage: View {
             }
     }
 
-    private var dismissGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .global)
-            .updating($isDismissGestureActive) { _, state, _ in
-                state = true
-            }
-            .onChanged { value in
+    /// UIKit-backed so it only begins for mostly-vertical drags: a SwiftUI `DragGesture` on the
+    /// pager's content claims every pan and stops the horizontal paging scroll view.
+    private var dismissGesture: VerticalPanGesture {
+        VerticalPanGesture(
+            isEnabled: !isZoomed,
+            onChanged: { translation, velocity in
                 guard pinchStartScale == nil, !isZoomed else { return }
-                if !dismissTracking {
-                    let horizontal: CGFloat = abs(value.translation.width)
-                    let vertical: CGFloat = abs(value.translation.height)
-                    guard vertical > horizontal * 1.4 else { return }
-                    dismissTracking = true
-                }
-                lastDismissTranslation = value.translation
-                lastDismissVelocity = value.velocity
-                onDismissDrag(value.translation)
+                dismissTracking = true
+                lastDismissTranslation = translation
+                lastDismissVelocity = velocity
+                onDismissDrag(translation)
+            },
+            onEnded: { translation, velocity in
+                finishDismiss(translation: translation, velocity: velocity)
             }
-            .onEnded { value in
-                finishDismiss(translation: value.translation, velocity: value.velocity)
-            }
+        )
     }
 
     // MARK: Gesture completion (idempotent; also called if a gesture is cancelled)
@@ -1796,5 +1786,60 @@ enum ScreenshotExporter {
             }
         }
         return result
+    }
+}
+
+// MARK: - Vertical pan
+
+/// Single-finger pan that fails unless the drag starts mostly vertical, leaving horizontal swipes
+/// to the enclosing scroll view. Runs alongside pinch and the scroll view's own pan.
+struct VerticalPanGesture: UIGestureRecognizerRepresentable {
+    var isEnabled: Bool
+    let onChanged: (CGSize, CGSize) -> Void
+    let onEnded: (CGSize, CGSize) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.maximumNumberOfTouches = 1
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        recognizer.isEnabled = isEnabled
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translation = recognizer.translation(in: recognizer.view)
+        let velocity = recognizer.velocity(in: recognizer.view)
+        let t = CGSize(width: translation.x, height: translation.y)
+        let v = CGSize(width: velocity.x, height: velocity.y)
+        switch recognizer.state {
+        case .began, .changed:
+            onChanged(t, v)
+        case .ended, .cancelled, .failed:
+            onEnded(t, v)
+        default:
+            break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.y) > abs(velocity.x) * 1.4
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
     }
 }
