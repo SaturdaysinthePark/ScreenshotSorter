@@ -81,7 +81,7 @@ struct CollectionsView: View {
 
             if model.showReviewBanner {
                 ReviewBannerView(
-                    unreviewedCount: model.unreviewedScreenshots.count,
+                    unreviewedCount: model.unreviewedCount,
                     isProcessing: !model.progress.isIdle,
                     onReviewTapped: {
                         HapticManager.shared.lightTap()
@@ -149,7 +149,7 @@ struct CollectionsView: View {
     }
 
     private var allScreenshotsCard: some View {
-        let collection = model.library.collection(for: .all)
+        let collection = model.library.preview(for: .all)
         return NavigationLink(value: CollectionKind.all) {
             HStack(spacing: Space.md) {
                 MosaicThumbnail(screenshots: Array(collection.screenshots.prefix(4)), tint: Palette.brand, size: 84)
@@ -187,7 +187,7 @@ struct CollectionsView: View {
                     ForEach(model.library.keptSmartCollections) { smart in
                         let kind = CollectionKind.smart(id: smart.id)
                         NavigationLink(value: kind) {
-                            CollectionCard(collection: model.library.collection(for: kind), tint: Palette.brandSecondary, zoomNamespace: zoomNamespace)
+                            CollectionCard(collection: model.library.preview(for: kind), tint: Palette.brandSecondary, zoomNamespace: zoomNamespace)
                         }
                         .pressable()
                         .contextMenu {
@@ -240,7 +240,7 @@ struct CollectionsView: View {
             } label: {
                 Image(systemName: "rectangle.stack.badge.play.fill")
             }
-            .disabled(model.unreviewedScreenshots.isEmpty)
+            .disabled(model.unreviewedCount == 0)
             .accessibilityLabel(Brand.Copy.Banners.reviewCTA)
         }
         ToolbarItem(placement: .topBarTrailing) {

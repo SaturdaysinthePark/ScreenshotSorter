@@ -48,8 +48,12 @@ final class ThumbnailLoader {
             guard let image else { return }
             let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
             Task { @MainActor in
-                if !degraded { self?.memory.setObject(image, forKey: cacheKey) }
-                update(image)
+                guard !degraded else { update(image); return }
+                // Decode off the main thread; otherwise every new thumbnail is decoded during the
+                // render commit while flinging through a large grid.
+                let prepared = await image.byPreparingForDisplay() ?? image
+                self?.memory.setObject(prepared, forKey: cacheKey)
+                update(prepared)
             }
         }
     }

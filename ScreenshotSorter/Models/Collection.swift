@@ -25,21 +25,25 @@ struct ScreenshotCollection: Identifiable, Hashable {
     let kind: CollectionKind
     let title: String
     let icon: String
+    /// All members, or only the first few for a preview (see `count`)
     var screenshots: [Screenshot]
+    /// Members in the whole collection; differs from `screenshots.count` for previews
+    private let totalCount: Int?
 
     var id: String { kind.id }
-    var count: Int { screenshots.count }
+    var count: Int { totalCount ?? screenshots.count }
 
     /// Category for category collections (`.all` for the all-screenshots collection)
     var category: ScreenshotCategory {
         kind.category ?? .other
     }
 
-    init(kind: CollectionKind, title: String, icon: String, screenshots: [Screenshot]) {
+    init(kind: CollectionKind, title: String, icon: String, screenshots: [Screenshot], count: Int? = nil) {
         self.kind = kind
         self.title = title
         self.icon = icon
         self.screenshots = screenshots
+        self.totalCount = count
     }
 
     init(category: ScreenshotCategory, screenshots: [Screenshot]) {

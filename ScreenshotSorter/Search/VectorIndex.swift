@@ -72,15 +72,23 @@ struct VectorMatrix: Sendable {
     /// Top-k most similar ids above `minimum`, best first.
     func nearest(to query: [Float], k: Int, minimum: Float = -1, excluding: Set<String> = []) -> [(id: String, similarity: Float)] {
         let scores = similarities(to: query)
-        guard !scores.isEmpty else { return [] }
-        var candidates: [(id: String, similarity: Float)] = []
-        candidates.reserveCapacity(min(scores.count, k * 4))
-        for (row, score) in scores.enumerated() where score >= minimum {
-            let id = ids[row]
-            if !excluding.contains(id) { candidates.append((id, score)) }
+        guard !scores.isEmpty, k > 0 else { return [] }
+        // Top-k selection on row indices: sorting every row (and touching every id) cost
+        // ~40 ms at 25k rows; this keeps a k-sized buffer, ascending, and only reads ids that qualify.
+        var top: [(row: Int, score: Float)] = []
+        top.reserveCapacity(k + 1)
+        scores.withUnsafeBufferPointer { buffer in
+            for row in 0..<buffer.count {
+                let score = buffer[row]
+                guard score >= minimum else { continue }
+                if top.count == k, score <= top[0].score { continue }
+                if !excluding.isEmpty, excluding.contains(ids[row]) { continue }
+                let index = top.firstIndex { $0.score > score } ?? top.count
+                top.insert((row, score), at: index)
+                if top.count > k { top.removeFirst() }
+            }
         }
-        candidates.sort { $0.similarity > $1.similarity }
-        return Array(candidates.prefix(k))
+        return top.reversed().map { (ids[$0.row], $0.score) }
     }
 }
 

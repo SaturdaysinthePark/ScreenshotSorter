@@ -45,6 +45,7 @@ struct CleanGalleryView: View {
     @State private var isPreparingShare: Bool = false
     @State private var showInlineTitle: Bool = false
     @State private var visibility: GalleryVisibilityTracker = GalleryVisibilityTracker()
+    @State private var derivedCache: GalleryDerivedCache = GalleryDerivedCache()
 
     init(kind: CollectionKind, zoomNamespace: Namespace.ID? = nil) {
         self.kind = kind
@@ -54,10 +55,23 @@ struct CleanGalleryView: View {
     // MARK: Body
 
     var body: some View {
-        let collection: ScreenshotCollection = model.library.collection(for: kind)
-        let items: [Screenshot] = orderedItems(collection)
-        let sections: [GallerySection] = GallerySection.make(from: items, groupByDate: sortOption != .relevancy)
-        let ids: [String] = items.map { $0.id }
+        // Sections, counts and ids are O(library); rebuild them once per library change, not per body
+        let derived: GalleryDerived = derivedCache.value(revision: model.library.revision, kind: kind, sort: sortOption) {
+            let collection: ScreenshotCollection = model.library.collection(for: kind)
+            let items: [Screenshot] = orderedItems(collection)
+            return GalleryDerived(
+                collection: collection,
+                items: items,
+                sections: GallerySection.make(from: items, groupByDate: sortOption != .relevancy),
+                ids: items.map { $0.id },
+                unsortedCount: unsortedCount(items),
+                thisWeekCount: thisWeekCount(items)
+            )
+        }
+        let collection: ScreenshotCollection = derived.collection
+        let items: [Screenshot] = derived.items
+        let sections: [GallerySection] = derived.sections
+        let ids: [String] = derived.ids
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -69,8 +83,8 @@ struct CleanGalleryView: View {
                         tint: tint,
                         gradient: gradient,
                         count: items.count,
-                        unsortedCount: unsortedCount(items),
-                        thisWeekCount: thisWeekCount(items)
+                        unsortedCount: derived.unsortedCount,
+                        thisWeekCount: derived.thisWeekCount
                     )
                     .padding(.bottom, Space.md)
 
@@ -751,6 +765,30 @@ struct GalleryToast: Identifiable {
 }
 
 /// Date-bucketed slice of the grid ("Today", "Yesterday", "This week", months).
+/// Everything the gallery body derives from the library, cached per library revision.
+struct GalleryDerived {
+    let collection: ScreenshotCollection
+    let items: [Screenshot]
+    let sections: [GallerySection]
+    let ids: [String]
+    let unsortedCount: Int
+    let thisWeekCount: Int
+}
+
+@MainActor
+final class GalleryDerivedCache {
+    private var key: (revision: Int, kind: CollectionKind, sort: SortOption)?
+    private var cached: GalleryDerived?
+
+    func value(revision: Int, kind: CollectionKind, sort: SortOption, build: () -> GalleryDerived) -> GalleryDerived {
+        if let key, let cached, key.revision == revision, key.kind == kind, key.sort == sort { return cached }
+        let value = build()
+        key = (revision, kind, sort)
+        cached = value
+        return value
+    }
+}
+
 struct GallerySection: Identifiable {
     let id: String
     let title: String?

@@ -119,6 +119,8 @@ final class AppModel {
     @ObservationIgnored private var deepSinceCluster = 0
     @ObservationIgnored private var isClustering = false
     @ObservationIgnored private var searchContextCache: (revision: Int, context: SearchContext)?
+    /// Read by `.searchable` on every home render; scanning 25k items per frame showed up in ScaleTests.
+    @ObservationIgnored private var suggestedTokensCache: (revision: Int, tokens: [SearchToken])?
 
     init() {
         let store = AnalysisStore.openDefault()
@@ -353,13 +355,14 @@ final class AppModel {
 
     // MARK: - Review
 
+    /// Materialises the whole review queue; only for opening the deck (views use `unreviewedCount`).
     var unreviewedScreenshots: [Screenshot] { library.unreviewed }
+    var unreviewedCount: Int { library.unreviewedCount }
 
     var showReviewBanner: Bool {
-        let unreviewed = library.unreviewed
-        guard !unreviewed.isEmpty, library.analyzedCount > 0 else { return false }
+        guard library.unreviewedCount > 0, library.analyzedCount > 0 else { return false }
         guard let dismissed = reviewBannerDismissedAt else { return true }
-        return (unreviewed.first?.creationDate ?? .distantPast) > dismissed
+        return (library.newestUnreviewedDate ?? .distantPast) > dismissed
     }
 
     func dismissReviewBanner() {
@@ -616,6 +619,10 @@ final class AppModel {
 
     /// Category / app / entity chips to suggest under the search field.
     var suggestedSearchTokens: [SearchToken] {
+        _ = library.revision
+        if let cache = suggestedTokensCache, cache.revision == library.revision {
+            return cache.tokens.filter { !searchTokens.contains($0) }
+        }
         let categories = library.categoryCollections(sort: .imageCount)
             .prefix(6)
             .compactMap { $0.kind.category }
@@ -627,6 +634,8 @@ final class AppModel {
         }
         let apps = appCounts.sorted { $0.value > $1.value }.prefix(4).map { SearchToken.app($0.key) }
         let entities: [SearchToken] = [.entity(.url), .entity(.phone), .entity(.tracking)]
-        return (Array(categories) + apps + entities).filter { !searchTokens.contains($0) }
+        let tokens = Array(categories) + apps + entities
+        suggestedTokensCache = (library.revision, tokens)
+        return tokens.filter { !searchTokens.contains($0) }
     }
 }
