@@ -60,6 +60,11 @@ actor AnalysisScheduler {
     private var lastFlush = Date.distantPast
     private var progress = AnalysisProgress()
     private var lastProgressEmit = Date.distantPast
+    // Throughput logging (Console: subsystem sabtain.ScreenshotSorter, category Scheduler)
+    private var lastThroughputLog = Date.distantPast
+    private var runStartedAt: Date?
+    private var lastBudget: AnalysisBudget?
+    private var failedCount = 0
     private var completionTimes: [Date] = []
     private var modelRetryIDs: [String] = []
 
@@ -219,6 +224,10 @@ actor AnalysisScheduler {
                     }
                 } else {
                     let budget = ResourceGovernor.budget(inBackground: inBackground)
+                    if budget != lastBudget {
+                        AnalysisScheduler.logger.notice("Budget fast×\(budget.fastConcurrency) deep×\(budget.deepConcurrency) model=\(budget.useLanguageModel) background=\(self.inBackground) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) lowPower=\(ProcessInfo.processInfo.isLowPowerModeEnabled)")
+                        lastBudget = budget
+                    }
                     while runningFast < budget.fastConcurrency, let id = nextFast() {
                         runningFast += 1
                         inFlight.insert(id)
@@ -278,6 +287,7 @@ actor AnalysisScheduler {
         var continueToDeep = queuedDeep.contains(id)
         if case .finished(let record) = result {
             pending.append(record)
+            if record.tier == .failed { failedCount += 1 }
             progress.fastCompleted += 1
             completionTimes.append(Date())
             // Every successfully seen item continues to the deep lane
@@ -341,9 +351,26 @@ actor AnalysisScheduler {
 
     private func emitProgress(force: Bool) {
         let now = Date()
+        logThroughputIfDue(now)
         guard force || now.timeIntervalSince(lastProgressEmit) >= 0.3 else { return }
         lastProgressEmit = now
         eventContinuation.yield(.progress(progress))
+    }
+
+    private func logThroughputIfDue(_ now: Date) {
+        if progress.isIdle {
+            if let started = runStartedAt {
+                let p = progress
+                AnalysisScheduler.logger.notice("Sorting idle after \(Int(now.timeIntervalSince(started)))s: fast \(p.fastCompleted) deep \(p.deepCompleted) failed \(self.failedCount)")
+                runStartedAt = nil
+            }
+            return
+        }
+        if runStartedAt == nil { runStartedAt = now }
+        guard now.timeIntervalSince(lastThroughputLog) >= 10 else { return }
+        lastThroughputLog = now
+        let p = progress
+        AnalysisScheduler.logger.notice("Sorting: fast \(p.fastCompleted) done / \(p.fastRemaining) left, deep \(p.deepCompleted) / \(p.deepRemaining), \(String(format: "%.1f", p.itemsPerSecond))/s, failed \(self.failedCount), paused \(p.isPaused)")
     }
 
     private func notifyDrainedIfIdle() {

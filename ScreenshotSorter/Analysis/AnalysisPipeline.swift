@@ -28,6 +28,12 @@ struct AnalysisPipeline: Sendable {
         case skipped
     }
 
+    /// One line per decision (debug level: free unless streamed, e.g. `log stream --level debug
+    /// --predicate 'subsystem == "sabtain.ScreenshotSorter" AND category == "Pipeline"'`).
+    private static func logDecision(_ pass: StaticString, id: String, _ result: ClassificationOutput) {
+        logger.debug("\(pass) \(id, privacy: .public): \(result.categories.map { "\($0.category.key)=\(String(format: "%.2f", $0.score))" }.joined(separator: " "), privacy: .public) app=\(result.app?.appID ?? "-", privacy: .public)")
+    }
+
     // MARK: Fast
 
     func runFast(id: String, createdAt: Date) async -> Result {
@@ -47,6 +53,7 @@ struct AnalysisPipeline: Sendable {
 
             let wasCurrentDeep = record.tier == .deep && record.visionVersion == PipelineVersion.vision
             apply(result, features: output.features, insight: insight, to: &record)
+            AnalysisPipeline.logDecision("fast", id: id, result)
             record.tier = wasCurrentDeep ? .deep : .fast
             record.visionVersion = PipelineVersion.vision
             record.rulesVersion = PipelineVersion.rules
@@ -122,6 +129,7 @@ struct AnalysisPipeline: Sendable {
             let user = await learner.signals(for: id, vectors: vectors)
             let result = ScreenshotClassifier.classify(features: features, insight: insight, user: user, entities: entities)
             apply(result, features: features, insight: insight, to: &record)
+            AnalysisPipeline.logDecision("deep", id: id, result)
             record.entities = entities
             record.featurePrint = output.featurePrint
             record.tier = .deep

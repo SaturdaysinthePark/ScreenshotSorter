@@ -17,7 +17,7 @@ final class QAWalkthroughTests: XCTestCase {
             app.launchArguments += extra.split(separator: " ").map(String.init)
         }
         addUIInterruptionMonitor(withDescription: "System alerts") { alert in
-            for label in ["Allow Full Access", "Allow Access to All Photos", "Allow", "OK", "Don’t Allow"] {
+            for label in ["Allow Full Access", "Allow Access to All Photos", "Allow While Using App", "Allow", "OK", "Don’t Allow"] {
                 let button = alert.buttons[label]
                 if button.exists { button.tap(); return true }
             }
@@ -46,12 +46,12 @@ final class QAWalkthroughTests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", ", 202"))
     }
 
-    private func dismissSpringboardAlerts() {
+    private func dismissSpringboardAlerts(firstWait: TimeInterval = 1) {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for _ in 0..<3 {
+        for attempt in 0..<3 {
             let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: 1) else { return }
-            for label in ["Allow Full Access", "Allow Access to All Photos", "Allow", "OK", "Don’t Allow"] {
+            guard alert.waitForExistence(timeout: attempt == 0 ? firstWait : 1) else { return }
+            for label in ["Allow Full Access", "Allow Access to All Photos", "Allow While Using App", "Allow", "OK", "Don’t Allow"] {
                 let button = alert.buttons[label]
                 if button.exists { button.tap(); break }
             }
@@ -442,5 +442,92 @@ final class QAWalkthroughTests: XCTestCase {
             sleep(1)
         }
         mark("end")
+    }
+
+    /// Clears system alerts left on screen (e.g. before corpus capture).
+    @MainActor
+    func test99DismissSystemAlerts() throws {
+        dismissSpringboardAlerts()
+    }
+
+    /// Large-library run: first sort of the whole library while the user scrolls the grid.
+    /// Pair with `ps`/`log stream` on the host (see docs/qa/animation-review.md).
+    @MainActor
+    func test06LargeLibraryFirstSort() throws {
+        app.launch()
+        mark("launch")
+        let allow = app.buttons["Allow Photo Access"]
+        if allow.waitForExistence(timeout: 5) {
+            allow.tap()
+            dismissSpringboardAlerts(firstWait: 10)
+        }
+        let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "All Screenshots")).firstMatch
+        _ = all.waitForExistence(timeout: 30)
+        mark("home")
+        snap("06-home-start")
+        all.tap()
+        sleep(1)
+        mark("scroll")
+        for round in 0..<12 {
+            app.swipeUp(velocity: .fast)
+            usleep(300_000)
+            app.swipeUp(velocity: .fast)
+            usleep(300_000)
+            app.swipeDown(velocity: .fast)
+            usleep(300_000)
+            if round % 4 == 0 { snap("06-grid-\(round)") }
+        }
+        mark("scroll-end")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        for i in 0..<12 { sleep(5); snap("06-home-\(i)") }
+        mark("end")
+    }
+
+    /// A/B for scroll smoothness on a large library: grid scrolling with sorting paused, then running.
+    @MainActor
+    func test07GridScrollPausedVsSorting() throws {
+        app.launch()
+        waitForHome()
+        func setSorting(paused: Bool) {
+            app.buttons["More"].firstMatch.tap()
+            let item = app.buttons[paused ? "Pause sorting" : "Resume sorting"]
+            if item.waitForExistence(timeout: 2) { item.tap() } else { app.tap() }
+            sleep(1)
+        }
+        func scroll(_ label: String) {
+            mark(label)
+            for _ in 0..<6 {
+                app.swipeUp(velocity: .fast); usleep(250_000)
+                app.swipeUp(velocity: .fast); usleep(250_000)
+                app.swipeDown(velocity: .fast); usleep(250_000)
+            }
+            mark(label + "-end")
+        }
+        setSorting(paused: true)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "All Screenshots")).firstMatch.tap()
+        sleep(2)
+        scroll("paused")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        sleep(1)
+        setSorting(paused: false)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "All Screenshots")).firstMatch.tap()
+        sleep(2)
+        scroll("sorting")
+    }
+
+    /// Scrolls the All Screenshots grid for ~40 s (for profiling with `sample` / Instruments).
+    @MainActor
+    func test08GridScrollOnly() throws {
+        app.launch()
+        waitForHome()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "All Screenshots")).firstMatch.tap()
+        sleep(2)
+        mark("scroll")
+        for _ in 0..<10 {
+            app.swipeUp(velocity: .fast); usleep(250_000)
+            app.swipeUp(velocity: .fast); usleep(250_000)
+            app.swipeDown(velocity: .fast); usleep(250_000)
+        }
+        mark("scroll-end")
     }
 }
