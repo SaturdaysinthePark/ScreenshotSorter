@@ -12,7 +12,7 @@ import Foundation
 enum CategoryRules {
 
     static var all: [CategoryRule] {
-        planning + work + money + shopping + media + travel + lifestyle + information + system + visualText + communication
+        planning + work + money + shopping + media + travel + lifestyle + information + system + visualText + communication + sites
     }
 
     // MARK: Events & Planning
@@ -22,11 +22,14 @@ enum CategoryRules {
             category: .events,
             strong: ["rsvp": 0.85, "save the date": 0.9, "add to calendar": 0.8, "you're invited": 0.85,
                      "you are invited": 0.85, "event details": 0.75, "doors open": 0.8, "lineup": 0.55,
-                     "going": 0.25, "interested": 0.2, "eventbrite": 0.85, "partiful": 0.9, "luma": 0.5],
+                     "going": 0.25, "interested": 0.2, "eventbrite": 0.85, "partiful": 0.9, "luma": 0.5,
+                     "attending": 0.55, "reserve a spot": 0.75, "hosted by": 0.55, "tickets on sale": 0.6,
+                     "get tickets": 0.5, "all-day": 0.4],
             weak: ["concert": 0.3, "festival": 0.3, "party": 0.25, "wedding": 0.3, "birthday": 0.25,
                    "venue": 0.3, "tickets": 0.2, "invite": 0.25, "celebration": 0.2, "meetup": 0.3,
                    "conference": 0.3, "webinar": 0.3, "pm": 0.1, "date": 0.1],
-            patterns: [.allOf(["when", "where"], weight: 0.45)],
+            // Two "10:00 – 11:00 AM" ranges is a calendar day or an event schedule
+            patterns: [.allOf(["when", "where"], weight: 0.45), .timeRangeCount(min: 2, weight: 0.7)],
             minWeakHits: 2
         ),
         CategoryRule(
@@ -144,7 +147,8 @@ enum CategoryRules {
         CategoryRule(
             category: .books,
             strong: ["isbn": 0.9, "paperback": 0.8, "hardcover": 0.8, "kindle edition": 0.85, "goodreads": 0.85,
-                     "audiobook": 0.75, "new york times bestseller": 0.85, "chapter": 0.4, "author": 0.35],
+                     "audiobook": 0.75, "new york times bestseller": 0.85, "chapter": 0.4, "author": 0.35,
+                     "want to read": 0.85, "currently reading": 0.75, "storygraph": 0.85],
             weak: ["book": 0.3, "novel": 0.35, "read": 0.1, "pages": 0.15, "series": 0.15]
         ),
         CategoryRule(
@@ -164,8 +168,10 @@ enum CategoryRules {
             category: .music,
             strong: ["spotify": 0.8, "apple music": 0.8, "now playing": 0.7, "liked songs": 0.85, "playlist": 0.6,
                      "album": 0.5, "lyrics": 0.6, "shazam": 0.85, "soundcloud": 0.85, "tidal": 0.5,
-                     "monthly listeners": 0.9, "add to library": 0.4],
-            weak: ["song": 0.3, "artist": 0.2, "track": 0.2, "listen": 0.25, "single": 0.1, "ep": 0.1]
+                     "monthly listeners": 0.9, "add to library": 0.4, "discover weekly": 0.9, "release radar": 0.9,
+                     "daily mix": 0.8, "made for": 0.3, "your library": 0.45, "up next": 0.3, "concerts near you": 0.8],
+            weak: ["song": 0.3, "songs": 0.3, "artist": 0.2, "track": 0.2, "listen": 0.25, "single": 0.1, "ep": 0.1,
+                   "tour": 0.2, "lyrics": 0.2]
         ),
         CategoryRule(
             category: .videoGames,
@@ -183,6 +189,11 @@ enum CategoryRules {
             // Meme phrasing ("me when…") shows up in normal chats too; require two cues.
             // Image-only memes are left to the on-device language model.
             minEvidence: 2
+        ),
+        CategoryRule(
+            category: .memes,
+            // Two all-caps captions on an otherwise text-light screen: classic top/bottom meme text
+            patterns: [.capsCaption(minLines: 2, weight: 0.7)]
         )
     ]
 
@@ -201,7 +212,8 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .directions,
-            strong: ["directions": 0.6, "turn left": 0.85, "turn right": 0.85, "continue straight": 0.85,
+            // "Directions" alone is also a button on every place card
+            strong: ["directions": 0.4, "turn left": 0.85, "turn right": 0.85, "continue straight": 0.85, "add stop": 0.8,
                      "fastest route": 0.85, "arrival time": 0.5, "eta": 0.5, "min drive": 0.8, "min walk": 0.7,
                      "get directions": 0.8, "google maps": 0.6, "route": 0.35, "transit": 0.4, "miles": 0.15],
             weak: ["mi": 0.2, "km": 0.2, "min": 0.1, "exit": 0.2, "head north": 0.5, "head south": 0.5,
@@ -211,8 +223,11 @@ enum CategoryRules {
             category: .places,
             strong: ["open now": 0.4, "closes": 0.35, "reviews": 0.15, "yelp": 0.7, "tripadvisor": 0.75,
                      "google maps": 0.4, "save place": 0.7, "add to guide": 0.7, "neighborhood": 0.35],
-            weak: ["address": 0.3, "located": 0.25, "visit": 0.2, "area": 0.1, "nearby": 0.3, "hours": 0.2],
-            patterns: [.allOf(["open", "closes"], weight: 0.45)]
+            weak: ["address": 0.3, "located": 0.25, "visit": 0.2, "area": 0.1, "nearby": 0.3, "hours": 0.2,
+                   "ratings": 0.2, "closed": 0.15, "website": 0.15],
+            // Place cards (Maps, Google, Yelp): action buttons plus hours
+            patterns: [.allOf(["open", "closes"], weight: 0.45), .allOf(["call", "website"], weight: 0.6),
+                       .allOf(["directions", "website"], weight: 0.55)]
         ),
         CategoryRule(
             category: .sitesOfInterest,
@@ -251,7 +266,8 @@ enum CategoryRules {
             category: .sports,
             strong: ["espn": 0.8, "final score": 0.75, "box score": 0.85, "standings": 0.6, "playoffs": 0.65,
                      "nba": 0.75, "nfl": 0.75, "mlb": 0.75, "nhl": 0.75, "premier league": 0.8, "fantasy": 0.4,
-                     "touchdown": 0.8, "quarter": 0.2, "halftime": 0.7, "championship": 0.5],
+                     "touchdown": 0.8, "quarter": 0.2, "halftime": 0.7, "championship": 0.5, "matchup": 0.45,
+                     "win probability": 0.6, "scoreboard": 0.7, "fixtures": 0.5],
             weak: ["game": 0.15, "team": 0.2, "score": 0.2, "vs": 0.2, "season": 0.15, "league": 0.3,
                    "player": 0.15, "win": 0.1, "match": 0.15]
         ),
@@ -297,13 +313,16 @@ enum CategoryRules {
                      "apple news": 0.85, "reporting": 0.3, "correspondent": 0.6],
             weak: ["news": 0.3, "according": 0.2, "said": 0.1, "officials": 0.3, "report": 0.2, "article": 0.3,
                    "published": 0.25, "government": 0.2, "president": 0.2],
-            patterns: [.lineCount(min: 18, weight: 0.1)]
+            patterns: [.lineCount(min: 18, weight: 0.1)],
+            // Wikipedia's "Article | Talk" tabs are not journalism
+            negative: ["wikipedia"]
         ),
         CategoryRule(
             category: .quotes,
             strong: ["quote of the day": 0.9, "daily quote": 0.85, "words to live by": 0.7, "inspirational": 0.5],
             weak: ["life": 0.15, "love": 0.1, "never": 0.1, "always": 0.1, "believe": 0.2, "dream": 0.2,
-                   "happiness": 0.25, "success": 0.15, "soul": 0.2, "heart": 0.1]
+                   "happiness": 0.25, "success": 0.15, "soul": 0.2, "heart": 0.1],
+            patterns: [.quoteAttribution(weight: 0.8)]
         ),
         CategoryRule(
             category: .weather,
@@ -329,7 +348,8 @@ enum CategoryRules {
             category: .notifications,
             strong: ["notification center": 0.9, "notifications": 0.4, "now": 0.1, "clear all": 0.4, "show less": 0.3],
             weak: ["ago": 0.15, "min ago": 0.3, "options": 0.1],
-            patterns: [.countOf(["now", "1m ago", "2m ago", "5m ago", "yesterday", "min ago", "hours ago"], min: 3, weight: 0.55)]
+            patterns: [.countOf(["now", "1m ago", "2m ago", "5m ago", "yesterday", "min ago", "hours ago"], min: 3, weight: 0.55),
+                       .relativeTimeCount(min: 2, weight: 0.7), .lockScreenDate(weight: 0.6)]
         ),
         CategoryRule(
             category: .iosHomeScreens,
@@ -337,7 +357,9 @@ enum CategoryRules {
             weak: [:],
             patterns: [.countOf(["settings", "photos", "camera", "messages", "mail", "safari", "maps", "wallet",
                                  "calendar", "clock", "weather", "notes", "reminders", "app store", "music",
-                                 "facetime", "phone", "files", "health", "fitness"], min: 6, weight: 0.85)]
+                                 "facetime", "phone", "files", "health", "fitness", "contacts", "watch", "preview",
+                                 "utilities", "calculator", "podcasts", "shortcuts", "find my", "freeform", "journal",
+                                 "passwords", "stocks", "voice memos", "translate", "home", "tv", "books", "news"], min: 5, weight: 0.85)]
         ),
         CategoryRule(
             category: .settings,
@@ -355,7 +377,9 @@ enum CategoryRules {
             strong: ["something went wrong": 0.9, "an error occurred": 0.9, "error": 0.35, "failed to": 0.6,
                      "try again": 0.35, "not found": 0.4, "404": 0.6, "500 internal server error": 0.95,
                      "unexpected error": 0.9, "unable to": 0.45, "crash": 0.5, "exception": 0.55,
-                     "cannot connect": 0.7, "no internet connection": 0.85, "access denied": 0.75],
+                     "cannot connect": 0.7, "no internet connection": 0.85, "access denied": 0.75,
+                     "can't open the page": 0.9, "server can't be found": 0.85, "can't be found": 0.5,
+                     "not connected to the internet": 0.9, "page not found": 0.85],
             weak: ["failed": 0.25, "problem": 0.2, "issue": 0.15, "bug": 0.35, "retry": 0.3, "oops": 0.4]
         )
     ]
@@ -378,6 +402,7 @@ enum CategoryRules {
         CategoryRule(
             category: .watches,
             strong: ["rolex": 0.75, "omega": 0.35, "chronograph": 0.75, "automatic movement": 0.8, "dial": 0.3,
+                     "apple watch": 0.55, "smartwatch": 0.6, "wristwatch": 0.7,
                      "chrono24": 0.85, "patek philippe": 0.85, "audemars piguet": 0.85],
             weak: ["watch": 0.25, "strap": 0.3, "bezel": 0.4, "mm": 0.1, "sapphire": 0.25]
         ),
@@ -388,14 +413,16 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .jewelry,
-            strong: ["necklace": 0.65, "earrings": 0.65, "bracelet": 0.6, "engagement ring": 0.8, "14k": 0.7,
-                     "18k": 0.7, "sterling silver": 0.65, "diamond": 0.4, "carat": 0.65, "pendant": 0.6],
-            weak: ["gold": 0.2, "silver": 0.15, "ring": 0.15, "jewelry": 0.4, "gemstone": 0.4]
+            // Bare "14K" is usually a like/retweet count, so karats only count next to a metal
+            strong: ["necklace": 0.65, "earrings": 0.65, "bracelet": 0.6, "engagement ring": 0.8, "14k gold": 0.8,
+                     "18k gold": 0.8, "14k white gold": 0.85, "sterling silver": 0.65, "diamond": 0.4, "carat": 0.65, "pendant": 0.6],
+            weak: ["gold": 0.2, "silver": 0.15, "ring": 0.15, "jewelry": 0.4, "gemstone": 0.4, "14k": 0.2, "18k": 0.2]
         ),
         CategoryRule(
             category: .furniture,
+            // Product nouns are moderate on their own; with shopping context they pass (see productPageThreshold)
             strong: ["ikea": 0.6, "wayfair": 0.75, "west elm": 0.75, "sectional": 0.65, "nightstand": 0.65,
-                     "dining table": 0.6, "bookshelf": 0.45, "dresser": 0.5],
+                     "dining table": 0.6, "bookshelf": 0.45, "dresser": 0.5, "sofa": 0.45, "couch": 0.45, "armchair": 0.5],
             weak: ["sofa": 0.35, "couch": 0.35, "chair": 0.25, "table": 0.15, "desk": 0.2, "lamp": 0.25, "rug": 0.3]
         ),
         CategoryRule(
@@ -447,6 +474,34 @@ enum CategoryRules {
             strong: ["bouquet": 0.55, "florist": 0.7],
             weak: ["roses": 0.3, "tulips": 0.35, "flowers": 0.3, "bloom": 0.25]
         )
+    ]
+
+    // MARK: Sites (the host in Safari's address bar or a share sheet)
+
+    static let sites: [CategoryRule] = [
+        CategoryRule(category: .news, patterns: [.host([
+            "bbc.com", "bbc.co.uk", "npr.org", "apnews.com", "theguardian.com", "cnn.com", "nytimes.com", "reuters.com",
+            "washingtonpost.com", "wsj.com", "bloomberg.com", "ft.com", "aljazeera.com", "nbcnews.com", "cbsnews.com",
+            "foxnews.com", "usatoday.com", "politico.com", "axios.com", "theverge.com", "techcrunch.com", "wired.com",
+            "arstechnica.com", "latimes.com", "economist.com", "theatlantic.com", "ycombinator.com", "news.google.com"], weight: 0.75)]),
+        CategoryRule(category: .reading, patterns: [.host(["wikipedia.org", "medium.com", "substack.com"], weight: 0.4)]),
+        CategoryRule(category: .stores, patterns: [.host([
+            "amazon.com", "target.com", "walmart.com", "bestbuy.com", "ikea.com", "nike.com", "etsy.com", "ebay.com",
+            "wayfair.com", "costco.com", "zara.com", "hm.com", "uniqlo.com", "sephora.com", "shein.com", "temu.com"], weight: 0.7)]),
+        CategoryRule(category: .recipes, patterns: [.host([
+            "allrecipes.com", "bbcgoodfood.com", "seriouseats.com", "foodnetwork.com", "bonappetit.com", "epicurious.com",
+            "cooking.nytimes.com", "budgetbytes.com", "simplyrecipes.com"], weight: 0.7)]),
+        CategoryRule(category: .movies, patterns: [.host(["imdb.com", "letterboxd.com", "rottentomatoes.com", "netflix.com", "justwatch.com"], weight: 0.75)]),
+        CategoryRule(category: .sports, patterns: [.host(["espn.com", "nba.com", "nfl.com", "mlb.com", "premierleague.com", "theathletic.com", "fifa.com"], weight: 0.75)]),
+        CategoryRule(category: .homes, patterns: [.host(["zillow.com", "redfin.com", "realtor.com", "trulia.com", "apartments.com", "streeteasy.com"], weight: 0.8)]),
+        CategoryRule(category: .finance, patterns: [.host(["finance.yahoo.com", "coingecko.com", "coinmarketcap.com", "robinhood.com", "chase.com", "bankofamerica.com"], weight: 0.7)]),
+        CategoryRule(category: .weather, patterns: [.host(["weather.gov", "weather.com", "accuweather.com", "wunderground.com"], weight: 0.8)]),
+        CategoryRule(category: .flights, patterns: [.host(["flightaware.com", "kayak.com", "expedia.com", "booking.com", "united.com", "delta.com", "aa.com", "southwest.com"], weight: 0.7)]),
+        CategoryRule(category: .programming, patterns: [.host(["github.com", "stackoverflow.com", "developer.apple.com", "developer.mozilla.org", "docs.python.org", "gitlab.com", "npmjs.com"], weight: 0.75)]),
+        CategoryRule(category: .videoGames, patterns: [.host(["steampowered.com", "ign.com", "gamespot.com", "playstation.com", "xbox.com", "nintendo.com"], weight: 0.75)]),
+        CategoryRule(category: .books, patterns: [.host(["goodreads.com", "gutenberg.org", "thestorygraph.com"], weight: 0.75)]),
+        CategoryRule(category: .events, patterns: [.host(["eventbrite.com", "partiful.com", "lu.ma", "meetup.com", "ticketmaster.com", "dice.fm"], weight: 0.7)]),
+        CategoryRule(category: .health, patterns: [.host(["cdc.gov", "nih.gov", "webmd.com", "mayoclinic.org", "clevelandclinic.org"], weight: 0.7)])
     ]
 
     // MARK: Communication (text cues beyond app detection)

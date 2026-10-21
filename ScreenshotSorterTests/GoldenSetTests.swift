@@ -7,7 +7,7 @@ import Testing
 /// To grow it: export features from the DEBUG evaluation screen on device, scrub personal
 /// text, and append cases to `Fixtures/golden_features.json`. Raise `macroF1Floor` as accuracy improves.
 struct GoldenSetTests {
-    static let macroF1Floor = 0.9
+    static let macroF1Floor = 0.95
 
     @Test func everyCaseClassifiesCorrectly() throws {
         var failures: [String] = []

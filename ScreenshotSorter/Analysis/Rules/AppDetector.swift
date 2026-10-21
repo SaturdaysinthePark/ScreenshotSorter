@@ -11,8 +11,8 @@ struct AppMatch: Sendable, Hashable {
 struct AppDetector: Sendable {
     private struct CompiledSignature: Sendable {
         let signature: AppSignature
-        let names: [String]
-        let phrases: [(String, Double)]
+        let names: [MatchTerm]
+        let phrases: [(MatchTerm, Double)]
         let chrome: [RuleEngine.CompiledPattern]
     }
 
@@ -28,8 +28,8 @@ struct AppDetector: Sendable {
         self.signatures = signatures.map { signature in
             CompiledSignature(
                 signature: signature,
-                names: signature.names.map { TextNormalizer.normalizeTerm($0) },
-                phrases: signature.phrases.map { (TextNormalizer.normalizeTerm($0.key), $0.value) },
+                names: signature.names.map { MatchTerm(TextNormalizer.normalizeTerm($0)) },
+                phrases: signature.phrases.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) },
                 chrome: signature.chrome.map { RuleEngine.CompiledPattern($0) }
             )
         }
@@ -42,14 +42,14 @@ struct AppDetector: Sendable {
 
         for compiled in signatures {
             var weights: [Double] = []
-            if compiled.names.contains(where: { text.contains(normalized: $0) }) {
+            if compiled.names.contains(where: { text.contains($0) }) {
                 weights.append(AppDetector.nameWeight)
             }
             let hosts = compiled.signature.hosts
             if !hosts.isEmpty && text.urlHosts.contains(where: { host in hosts.contains { host == $0 || host.hasSuffix("." + $0) } }) {
                 weights.append(AppDetector.hostWeight)
             }
-            for (phrase, weight) in compiled.phrases where text.contains(normalized: phrase) {
+            for (phrase, weight) in compiled.phrases where text.contains(phrase) {
                 weights.append(weight)
             }
             for pattern in compiled.chrome {

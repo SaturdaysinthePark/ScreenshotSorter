@@ -11,9 +11,15 @@ enum TestSupport {
     static func features(lines: [(String, ScreenZone)] = [],
                          labels: [(String, Double)] = [],
                          barcodes: [String] = [],
-                         faceArea: Double = 0) -> ExtractedFeatures {
+                         faceArea: Double = 0,
+                         boxes: [CGRect]? = nil,
+                         textDensity: Double = 0) -> ExtractedFeatures {
         var features = ExtractedFeatures()
-        features.lines = lines.map { OCRLine(text: $0.0, confidence: 1, box: .zero, zone: $0.1) }
+        features.lines = lines.enumerated().map { index, line in
+            let box = boxes.flatMap { index < $0.count ? $0[index] : nil } ?? .zero
+            return OCRLine(text: line.0, confidence: 1, box: box, zone: line.1)
+        }
+        features.textDensity = textDensity
         features.labels = labels.map { VisionLabel(identifier: $0.0, confidence: $0.1) }
         features.barcodes = barcodes.map { BarcodeInfo(payload: nil, symbology: $0) }
         if faceArea > 0 {
@@ -29,11 +35,16 @@ enum TestSupport {
 struct GoldenCase: Decodable {
     let name: String
     let lines: [[String]]?
+    /// Optional [x, y, width, height] per line (normalized, top-left origin)
+    let boxes: [[Double]]?
+    let textDensity: Double?
     let labels: [GoldenLabel]?
     let barcodes: [String]?
     let faceArea: Double?
     let expect: [String]?
     let forbid: [String]?
+    /// Acceptable extra labels (not counted as false positives)
+    let allow: [String]?
     let app: String?
 
     struct GoldenLabel: Decodable {
@@ -63,17 +74,20 @@ struct GoldenCase: Decodable {
             lines: parsedLines,
             labels: (labels ?? []).map { ($0.identifier, $0.confidence) },
             barcodes: barcodes ?? [],
-            faceArea: faceArea ?? 0
+            faceArea: faceArea ?? 0,
+            boxes: boxes?.map { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) },
+            textDensity: textDensity ?? 0
         )
     }
 
     var expected: Set<ScreenshotCategory> { Set((expect ?? []).compactMap { ScreenshotCategory(key: $0) }) }
     var forbidden: Set<ScreenshotCategory> { Set((forbid ?? []).compactMap { ScreenshotCategory(key: $0) }) }
+    var allowed: Set<ScreenshotCategory> { Set((allow ?? []).compactMap { ScreenshotCategory(key: $0) }) }
 
-    static func loadAll() throws -> [GoldenCase] {
+    static func loadAll(_ resource: String = "golden_features") throws -> [GoldenCase] {
         let bundle = TestSupport.bundle
-        guard let url = bundle.url(forResource: "golden_features", withExtension: "json")
-                ?? bundle.url(forResource: "golden_features", withExtension: "json", subdirectory: "Fixtures") else {
+        guard let url = bundle.url(forResource: resource, withExtension: "json")
+                ?? bundle.url(forResource: resource, withExtension: "json", subdirectory: "Fixtures") else {
             throw CocoaError(.fileNoSuchFile)
         }
         return try JSONDecoder().decode([GoldenCase].self, from: Data(contentsOf: url))

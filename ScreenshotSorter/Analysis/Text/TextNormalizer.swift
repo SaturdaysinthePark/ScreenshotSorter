@@ -61,18 +61,24 @@ struct NormalizedText: Sendable {
 
     /// `term` must already be normalized with `TextNormalizer.normalizeTerm`.
     func contains(normalized term: String) -> Bool {
-        guard !term.isEmpty else { return false }
-        if !term.contains(" ") {
-            return tokenSet.contains(term) || stems.contains(TextNormalizer.stem(term))
+        contains(MatchTerm(term))
+    }
+
+    /// Hot path for rules: the term's stem and first word are precomputed once.
+    func contains(_ term: MatchTerm) -> Bool {
+        guard !term.text.isEmpty else { return false }
+        guard let first = term.firstWord else {
+            return tokenSet.contains(term.text) || stems.contains(term.stem)
         }
-        return joined.contains(" " + term + " ")
+        // A phrase can't match unless its first word is on screen; skips the substring scan
+        guard tokenSet.contains(first) else { return false }
+        return joined.contains(term.padded)
     }
 
     func contains(normalized term: String, in zone: ScreenZone) -> Bool {
-        guard !term.isEmpty else { return false }
-        if !term.contains(" ") {
-            return zoneTokens[zone]?.contains(term) ?? false
-        }
+        guard !term.isEmpty, let tokens = zoneTokens[zone] else { return false }
+        guard let space = term.firstIndex(of: " ") else { return tokens.contains(term) }
+        guard tokens.contains(String(term[..<space])) else { return false }
         return zoneJoined[zone]?.contains(" " + term + " ") ?? false
     }
 
@@ -88,6 +94,26 @@ struct NormalizedText: Sendable {
     /// Number of occurrences of a single-token term
     func count(of token: String) -> Int {
         tokens.reduce(0) { $0 + ($1 == token ? 1 : 0) }
+    }
+}
+
+/// A normalized term prepared for repeated matching.
+struct MatchTerm: Sendable {
+    let text: String
+    let stem: String
+    /// First word of a multi-word phrase (`nil` for single words)
+    let firstWord: String?
+    let padded: String
+
+    init(_ normalized: String) {
+        text = normalized
+        stem = TextNormalizer.stem(normalized)
+        if let space = normalized.firstIndex(of: " ") {
+            firstWord = String(normalized[..<space])
+        } else {
+            firstWord = nil
+        }
+        padded = " " + normalized + " "
     }
 }
 

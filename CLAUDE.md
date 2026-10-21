@@ -44,10 +44,12 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
   colors, fonts or animations.
 
 ## Changing classification
+0. Measure first: `Tools/eval/` runs real Vision + the app's rules on a ~290-image labelled corpus on macOS
+   (see `Tools/eval/README.md`); `failures.py` explains every miss. Check the held-out set before calling a win.
 1. Edit rules in `Analysis/Rules/` (or fusion weights in `FusionConfig`).
 2. Add/adjust cases in `ScreenshotSorterTests/Fixtures/golden_features.json` (export real ones from
    the DEBUG "Evaluation" screen in the home ⋯ menu, scrub personal text).
-3. Run `GoldenSetTests`; keep macro-F1 ≥ the floor and every category reachable.
+3. Run `GoldenSetTests` and `CorpusRegressionTests`; keep macro-F1 ≥ the floors and every category reachable.
 4. Bump `PipelineVersion.rules` so existing libraries re-score from stored features (no re-OCR).
    Bump `.vision` only when image extraction changes.
 
@@ -55,3 +57,9 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
 - Animations go through `Motion` / `.dsAnimation`; test with Reduce Motion, dark mode, largest
   Dynamic Type and iPad. See `docs/qa/animation-review.md` for the QA checklist.
 - Haptics via `HapticManager` (not disabled by Reduce Motion).
+- Libraries of 2k–25k screenshots are normal. Main-actor work per frame or per analysis batch must not be
+  O(library): use `LibraryStore.preview(for:)` for cards/shelves, keep counters incremental. `ScaleTests`
+  enforces budgets at 25k.
+- Logs: subsystem `sabtain.ScreenshotSorter` — `Scheduler` (throughput every 10 s, budget changes),
+  `Pipeline` (failures; per-screenshot decisions at debug level), `Vision` (unavailable requests, once each).
+- UI walkthrough for `docs/qa/animation-review.md`: `QAWalkthroughTests` via `docs/qa/walkthrough.sh`.

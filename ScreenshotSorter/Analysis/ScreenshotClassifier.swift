@@ -35,6 +35,24 @@ struct ClassificationOutput: Sendable {
 /// library when rules change.
 enum ScreenshotClassifier {
     static let maxTags = 10
+    /// Product types worth surfacing on a shopping page ("a sofa", not just "a store")
+    static let productCategories: [ScreenshotCategory] = [.clothes, .shoes, .watches, .bags, .jewelry, .furniture, .electronics]
+    /// Store-rule score above which a page counts as a product listing
+    static let productPageThreshold = 0.75
+    /// A photo saved full screen has a handful of OCR lines (clock, URL pill); a feed or article has dozens.
+    /// Pictures inside text-heavy screens (a news photo, an avatar) are not what the screenshot is of,
+    /// so visual evidence fades from 1 at `photoLineCount` lines to `textHeavyVisionScale` at `textHeavyLineCount`.
+    static let photoLineCount = 8
+    static let textHeavyLineCount = 30
+    static let textHeavyVisionScale = 0.45
+    /// People in a painting are art, not "People"
+    static let artSuppressesPeople = 0.6
+
+    static func visionScale(lineCount: Int) -> Double {
+        guard lineCount > photoLineCount else { return 1 }
+        let t = min(1, Double(lineCount - photoLineCount) / Double(textHeavyLineCount - photoLineCount))
+        return 1 - t * (1 - textHeavyVisionScale)
+    }
 
     static func classify(features: ExtractedFeatures,
                          insight: ModelInsight? = nil,
@@ -45,15 +63,32 @@ enum ScreenshotClassifier {
                          rules: RuleEngine = .shared,
                          apps appDetector: AppDetector = .shared) -> ClassificationOutput {
         let text = TextNormalizer.normalize(lines: features.lines)
-        let ruleScores = rules.evaluate(text, features: features)
+        var ruleScores = rules.evaluate(text, features: features)
+        if (ruleScores[.stores] ?? 0) >= productPageThreshold {
+            for category in productCategories {
+                if let score = ruleScores[category] { ruleScores[category] = RuleEngine.noisyOr([score, 0.5]) }
+            }
+        }
         let appMatches = appDetector.detect(text, features: features)
 
         var input = FusionInput()
-        input.vision = VisionLabelMap.categoryScores(for: features.labels)
+        var vision = VisionLabelMap.categoryScores(for: features.labels)
+        let scale = visionScale(lineCount: features.lines.filter { $0.zone != .statusBar }.count)
+        if scale < 1 {
+            for (category, score) in vision where category.kind == .visual || category.kind == .mixed {
+                vision[category] = score * scale
+            }
+        }
+        var faces = features.faces
+        if (vision[.art] ?? 0) >= artSuppressesPeople {
+            vision[.people] = nil
+            faces = FaceStats()
+        }
+        input.vision = vision
         input.rules = ruleScores
         input.apps = appMatches
         input.barcodes = features.barcodes
-        input.faces = features.faces
+        input.faces = faces
         input.userKNN = user.knn
         input.userOverrides = user.overrides
         input.categoryBias = user.bias

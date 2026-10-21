@@ -18,9 +18,11 @@ extension ScreenshotCategory {
     var kind: CategoryKind {
         switch self {
         case .animals, .people, .nature, .landscapes, .beaches, .mountains, .flowers, .plants, .sunset,
-             .sitesOfInterest, .storefronts, .watches, .bags, .jewelry, .furniture:
+             .sitesOfInterest, .storefronts:
             return .visual
-        case .food, .drinks, .clothes, .shoes, .homes, .vehicles, .electronics, .books, .art, .cooking, .sports, .exercise:
+        // Products are named on the listing as reliably as they are seen in the photo
+        case .food, .drinks, .clothes, .shoes, .homes, .vehicles, .electronics, .books, .art, .cooking, .sports, .exercise,
+             .watches, .bags, .jewelry, .furniture:
             return .mixed
         case .imessage, .whatsapp, .signal, .telegram, .discord, .slack, .email, .gmail,
              .instagram, .tiktok, .twitter, .facebook, .linkedin, .reddit, .youtube:
@@ -73,6 +75,11 @@ struct FusionConfig: Sendable {
     var knnReliability: Double = 0.9
     /// How strongly negative neighbour evidence suppresses a category
     var knnSuppression: Double = 0.8
+    /// Inside a chat, topics people mention ("my flight lands at 6") are not what the screenshot is of:
+    /// text-rule evidence for topical categories is scaled by this when a messaging app is identified.
+    var messagingTopicDamping: Double = 0.6
+    var messagingAppConfidence: Double = 0.8
+    static let messagingCategories: Set<ScreenshotCategory> = [.imessage, .whatsapp, .signal, .telegram, .discord, .slack]
 
     static let `default` = FusionConfig()
 
@@ -132,6 +139,10 @@ enum SignalFusion {
         let perSource = evidence(input)
         var allCategories = Set(perSource.keys)
         allCategories.formUnion(input.userKNN.keys)
+        let inChat = input.apps.contains {
+            guard let category = $0.category else { return false }
+            return FusionConfig.messagingCategories.contains(category) && $0.confidence >= config.messagingAppConfidence
+        }
 
         for category in allCategories where category != .all && category != .other {
             if input.userOverrides[category] == false { continue }
@@ -139,7 +150,10 @@ enum SignalFusion {
             var miss = 1.0
             var sources: LabelSource = []
             for (source, p) in perSource[category] ?? [:] {
-                let reliability = config.reliability[source]?[kind] ?? 0
+                var reliability = config.reliability[source]?[kind] ?? 0
+                if inChat && source == .rules && (kind == .textual || kind == .mixed) {
+                    reliability *= config.messagingTopicDamping
+                }
                 let contribution = reliability * min(max(p, 0), 1)
                 miss *= (1 - contribution)
                 if contribution > 0.05 { sources.insert(source.labelSource) }

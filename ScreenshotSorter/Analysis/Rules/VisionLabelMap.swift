@@ -27,7 +27,7 @@ enum VisionLabelMap {
                       "chocolate", "icecream", "ice", "cheese", "fries", "dumpling", "ramen", "barbecue", "baked"]),
         (.drinks, 0.95, ["drink", "beverage", "coffee", "espresso", "latte", "cappuccino", "tea", "cocktail",
                          "beer", "wine", "juice", "smoothie", "soda", "liquor", "whiskey", "martini", "milkshake"]),
-        (.cooking, 0.85, ["cooking", "kitchen", "chef", "baking", "oven", "stove", "cookware", "utensil", "frying"]),
+        (.cooking, 0.85, ["cooking", "kitchen", "chef", "baking", "oven", "stove", "cookware", "frying"]),
         (.clothes, 0.9, ["clothing", "apparel", "garment", "shirt", "tshirt", "dress", "jacket", "coat", "jeans",
                          "denim", "pants", "trousers", "skirt", "sweater", "hoodie", "suit", "blouse", "shorts",
                          "swimsuit", "lingerie", "outfit", "fashion", "hat", "cap", "scarf"]),
@@ -40,11 +40,11 @@ enum VisionLabelMap {
         (.furniture, 0.9, ["furniture", "chair", "sofa", "couch", "table", "desk", "bed", "lamp", "shelf",
                            "bookcase", "cabinet", "dresser", "armchair", "stool", "bench"]),
         (.homes, 0.8, ["house", "home", "interior", "room", "bedroom", "bathroom", "livingroom", "apartment",
-                       "residential", "villa", "cottage", "mansion", "patio", "porch", "balcony"]),
+                       "residential", "villa", "cottage", "mansion", "patio", "porch", "balcony", "roof", "chimney"]),
         (.vehicles, 0.95, ["vehicle", "car", "automobile", "truck", "motorcycle", "bicycle", "bike", "suv", "sedan",
                            "van", "bus", "convertible", "jeep", "scooter", "boat", "yacht", "airplane", "aircraft"]),
         (.electronics, 0.85, ["computer", "laptop", "smartphone", "phone", "tablet", "monitor", "keyboard",
-                              "headphones", "earbuds", "speaker", "camera", "television", "console", "gadget",
+                              "headphones", "earbuds", "speaker", "camera", "television", "console", "gadget", "gamepad",
                               "electronics", "drone"]),
         (.nature, 0.75, ["nature", "forest", "tree", "trees", "woods", "grass", "field", "meadow", "jungle",
                          "waterfall", "river", "lake", "wilderness", "park", "foliage"]),
@@ -72,7 +72,7 @@ enum VisionLabelMap {
                          "hockey", "stadium", "athlete", "ball"]),
         (.exercise, 0.8, ["gym", "exercise", "workout", "fitness", "yoga", "running", "dumbbell", "weightlifting"]),
         (.music, 0.6, ["guitar", "piano", "concert", "drum", "drums", "violin", "microphone", "musician"]),
-        (.videoGames, 0.6, ["videogame", "gaming", "joystick", "controller"]),
+        (.videoGames, 0.6, ["videogame", "gaming", "joystick", "controller", "gamepad"]),
         (.weather, 0.5, ["rain", "snow", "storm", "lightning", "rainbow", "fog"]),
         (.events, 0.5, ["wedding", "party", "festival", "celebration", "fireworks", "parade"])
     ]
@@ -102,20 +102,53 @@ enum VisionLabelMap {
             .map(String.init)
     }
 
-    /// Per-category score: max over labels of confidence × mapping weight.
+    /// In "adult_cat" or "computer_monitor" the last word is the subject; earlier words only modify it.
+    static let modifierWeight = 0.5
+
+    /// Scene categories that show up behind almost any outdoor subject (grass behind a dog, trees behind a house)
+    static let backgroundCategories: Set<ScreenshotCategory> = [.nature, .plants, .landscapes]
+    static let foregroundCategories: Set<ScreenshotCategory> = [
+        .animals, .people, .vehicles, .homes, .food, .drinks, .sitesOfInterest, .storefronts, .furniture,
+        .electronics, .clothes, .shoes, .bags, .watches, .jewelry, .sports
+    ]
+    /// A foreground subject at least this likely scales background scene categories by `backgroundScale`
+    static let foregroundThreshold = 0.55
+    static let backgroundScale = 0.6
+
+    /// Specific categories that a generic one should not outrank once the specific label appears at all
+    /// (Vision reports "plant" at 0.9 and "flower" at 0.3 for a rose).
+    static let specificOverGeneric: [(specific: ScreenshotCategory, generic: ScreenshotCategory)] = [
+        (.flowers, .plants), (.mountains, .landscapes), (.sunset, .landscapes), (.beaches, .nature)
+    ]
+    static let specificMinimum = 0.25
+
+    /// Per-category score: max over labels of confidence × mapping weight, then scene/subject adjustments.
     static func categoryScores(for labels: [VisionLabel]) -> [ScreenshotCategory: Double] {
         var scores: [ScreenshotCategory: Double] = [:]
         for label in labels where label.confidence >= minimumConfidence {
-            var seen = Set<ScreenshotCategory>()
-            for token in tokens(of: label.identifier) {
+            var best: [ScreenshotCategory: Double] = [:]
+            let parts = tokens(of: label.identifier)
+            for (offset, token) in parts.enumerated() {
                 guard let targets = tokenIndex[token] else { continue }
-                for (category, weight) in targets where !seen.contains(category) {
-                    seen.insert(category)
-                    let value = label.confidence * weight
-                    if value > scores[category, default: 0] {
-                        scores[category] = value
-                    }
+                let role = offset == parts.count - 1 ? 1.0 : modifierWeight
+                for (category, weight) in targets {
+                    best[category] = max(best[category] ?? 0, label.confidence * weight * role)
                 }
+            }
+            for (category, value) in best where value > scores[category, default: 0] {
+                scores[category] = value
+            }
+        }
+
+        for (specific, generic) in specificOverGeneric {
+            if let specificScore = scores[specific], specificScore >= specificMinimum, let genericScore = scores[generic] {
+                scores[specific] = max(specificScore, genericScore * 0.9)
+            }
+        }
+        let hasSubject = foregroundCategories.contains { (scores[$0] ?? 0) >= foregroundThreshold }
+        if hasSubject {
+            for category in backgroundCategories {
+                if let score = scores[category] { scores[category] = score * backgroundScale }
             }
         }
         return scores

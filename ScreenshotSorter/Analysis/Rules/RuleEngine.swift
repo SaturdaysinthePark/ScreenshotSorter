@@ -19,6 +19,70 @@ enum RulePattern: Sendable {
     case host([String], weight: Double)
     case textDensity(min: Double, weight: Double)
     case lineCount(min: Int, weight: Double)
+    /// Layout cues computed from the raw OCR lines (see `LayoutSignals`)
+    case capsCaption(minLines: Int, weight: Double)
+    case quoteAttribution(weight: Double)
+    case timeRangeCount(min: Int, weight: Double)
+    case relativeTimeCount(min: Int, weight: Double)
+    case lockScreenDate(weight: Double)
+}
+
+/// Layout cues that keywords can't express, read once per screenshot from the raw OCR lines.
+struct LayoutSignals: Sendable {
+    /// Lines of ≥3 words written in capitals (meme captions)
+    var capsCaptionLines = 0
+    /// Vertical distance between the highest and lowest caps line (top + bottom captions, not a sign)
+    var capsCaptionSpread = 0.0
+    var lineCount = 0
+    /// An opening quote mark plus a short "— Name" line
+    var hasQuoteAttribution = false
+    /// "10:00 – 11:00 AM" style ranges (calendars, event listings)
+    var timeRanges = 0
+    /// "now", "2m ago", "1h ago", "5 min ago" (notification stacks)
+    var relativeTimes = 0
+    /// "Monday, October 20" on its own line near the top (lock screen)
+    var hasLockScreenDate = false
+
+    private static let timeRange = try! NSRegularExpression(
+        pattern: #"\b\d{1,2}(:\d{2})?\s*(am|pm)?\s*[–—-]\s*\d{1,2}(:\d{2})?\s*(am|pm)\b"#, options: [.caseInsensitive])
+    private static let relative = try! NSRegularExpression(
+        pattern: #"^(now|\d{1,2}\s?(m|min|h|hr|d)\s?ago|\d{1,2}\s?(minutes?|hours?)\s?ago)$"#, options: [.caseInsensitive])
+    private static let weekdayDate = try! NSRegularExpression(
+        pattern: #"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}$"#,
+        options: [.caseInsensitive])
+
+    init() {}
+
+    init(lines: [OCRLine]) {
+        lineCount = lines.count
+        var sawQuoteOpen = false
+        var capsTop = 1.0
+        var capsBottom = 0.0
+        for line in lines {
+            let text = line.text.trimmingCharacters(in: .whitespaces)
+            let range = NSRange(text.startIndex..., in: text)
+            let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+            if letters.count >= 8, text.split(separator: " ").count >= 3 {
+                let upper = letters.filter { CharacterSet.uppercaseLetters.contains($0) }.count
+                if Double(upper) / Double(letters.count) > 0.85 {
+                    capsCaptionLines += 1
+                    capsTop = min(capsTop, Double(line.box.minY))
+                    capsBottom = max(capsBottom, Double(line.box.maxY))
+                }
+            }
+            if let first = text.first, "“\"«„".contains(first), text.count > 12 { sawQuoteOpen = true }
+            if sawQuoteOpen, let first = text.first, "—–-~".contains(first), text.count < 40,
+               text.dropFirst().trimmingCharacters(in: .whitespaces).first?.isUppercase == true {
+                hasQuoteAttribution = true
+            }
+            timeRanges += LayoutSignals.timeRange.numberOfMatches(in: text, options: [], range: range)
+            if LayoutSignals.relative.firstMatch(in: text, options: [], range: range) != nil { relativeTimes += 1 }
+            if line.box.minY < 0.25, LayoutSignals.weekdayDate.firstMatch(in: text, options: [], range: range) != nil {
+                hasLockScreenDate = true
+            }
+        }
+        capsCaptionSpread = max(0, capsBottom - capsTop)
+    }
 }
 
 /// Declarative keyword/pattern rule for one category.
@@ -49,22 +113,22 @@ struct RuleEngine: Sendable {
 
     struct CompiledPattern: Sendable {
         let pattern: RulePattern
-        let terms: [String]
+        let terms: [MatchTerm]
 
         init(_ pattern: RulePattern) {
             self.pattern = pattern
             self.terms = RuleEngine.terms(of: pattern)
         }
 
-        func weight(in text: NormalizedText, features: ExtractedFeatures?) -> Double? {
-            RuleEngine.match(self, in: text, features: features)
+        func weight(in text: NormalizedText, features: ExtractedFeatures?, layout: LayoutSignals = LayoutSignals()) -> Double? {
+            RuleEngine.match(self, in: text, features: features, layout: layout)
         }
     }
 
     private struct CompiledRule: Sendable {
         let category: ScreenshotCategory
-        let strong: [(String, Double)]
-        let weak: [(String, Double)]
+        let strong: [(MatchTerm, Double)]
+        let weak: [(MatchTerm, Double)]
         let patterns: [CompiledPattern]
         let negative: [String]
         let minEvidence: Int
@@ -79,8 +143,8 @@ struct RuleEngine: Sendable {
         self.rules = rules.map { rule in
             CompiledRule(
                 category: rule.category,
-                strong: rule.strong.map { (TextNormalizer.normalizeTerm($0.key), $0.value) },
-                weak: rule.weak.map { (TextNormalizer.normalizeTerm($0.key), $0.value) },
+                strong: rule.strong.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) },
+                weak: rule.weak.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) },
                 patterns: rule.patterns.map { CompiledPattern($0) },
                 negative: rule.negative.map { TextNormalizer.normalizeTerm($0) },
                 minEvidence: rule.minEvidence,
@@ -89,12 +153,12 @@ struct RuleEngine: Sendable {
         }
     }
 
-    private static func terms(of pattern: RulePattern) -> [String] {
+    private static func terms(of pattern: RulePattern) -> [MatchTerm] {
         switch pattern {
         case .zone(_, let terms, _), .zoneAllOf(_, let terms, _), .allOf(let terms, _), .countOf(let terms, _, _):
-            return terms.map { TextNormalizer.normalizeTerm($0) }
+            return terms.map { MatchTerm(TextNormalizer.normalizeTerm($0)) }
         case .host(let hosts, _):
-            return hosts.map { $0.lowercased() }
+            return hosts.map { MatchTerm($0.lowercased()) }
         default:
             return []
         }
@@ -112,18 +176,19 @@ struct RuleEngine: Sendable {
     func evaluateDetailed(_ text: NormalizedText, features: ExtractedFeatures? = nil) -> [ScreenshotCategory: RuleHit] {
         guard !text.isEmpty else { return [:] }
         var result: [ScreenshotCategory: RuleHit] = [:]
+        let layout = features.map { LayoutSignals(lines: $0.lines) } ?? LayoutSignals()
 
         for rule in rules {
             var weights: [Double] = []
             var matched: [String] = []
 
-            for (term, weight) in rule.strong where text.contains(normalized: term) {
+            for (term, weight) in rule.strong where text.contains(term) {
                 weights.append(weight)
-                matched.append(term)
+                matched.append(term.text)
             }
 
             for compiled in rule.patterns {
-                if let weight = compiled.weight(in: text, features: features) {
+                if let weight = compiled.weight(in: text, features: features, layout: layout) {
                     weights.append(weight)
                     matched.append("<pattern>")
                 }
@@ -131,9 +196,9 @@ struct RuleEngine: Sendable {
 
             var weakWeights: [Double] = []
             var weakMatched: [String] = []
-            for (term, weight) in rule.weak where text.contains(normalized: term) {
+            for (term, weight) in rule.weak where text.contains(term) {
                 weakWeights.append(weight)
-                weakMatched.append(term)
+                weakMatched.append(term.text)
             }
             if !weakWeights.isEmpty && (weakWeights.count >= rule.minWeakHits || !weights.isEmpty) {
                 weights.append(contentsOf: weakWeights)
@@ -147,7 +212,8 @@ struct RuleEngine: Sendable {
                 score -= RuleEngine.negativePenalty
             }
             score = min(max(score, 0), 1)
-            if score > 0 {
+            // A category may have several rules (e.g. layout vs. wording); keep the strongest.
+            if score > 0, score > (result[rule.category]?.score ?? 0) {
                 result[rule.category] = RuleHit(score: score, matched: matched)
             }
         }
@@ -158,7 +224,7 @@ struct RuleEngine: Sendable {
         1 - weights.reduce(1) { $0 * (1 - min(max($1, 0), 1)) }
     }
 
-    fileprivate static func match(_ compiled: CompiledPattern, in text: NormalizedText, features: ExtractedFeatures?) -> Double? {
+    fileprivate static func match(_ compiled: CompiledPattern, in text: NormalizedText, features: ExtractedFeatures?, layout: LayoutSignals) -> Double? {
         switch compiled.pattern {
         case .priceCount(let minimum, let weight):
             return text.priceCount >= minimum ? weight : nil
@@ -171,17 +237,17 @@ struct RuleEngine: Sendable {
         case .subredditCount(let minimum, let weight):
             return text.subredditCount >= minimum ? weight : nil
         case .zone(let zone, _, let weight):
-            return compiled.terms.contains(where: { text.contains(normalized: $0, in: zone) }) ? weight : nil
+            return compiled.terms.contains(where: { text.contains(normalized: $0.text, in: zone) }) ? weight : nil
         case .zoneAllOf(let zone, _, let weight):
-            return compiled.terms.allSatisfy({ text.contains(normalized: $0, in: zone) }) ? weight : nil
+            return compiled.terms.allSatisfy({ text.contains(normalized: $0.text, in: zone) }) ? weight : nil
         case .allOf(_, let weight):
-            return compiled.terms.allSatisfy({ text.contains(normalized: $0) }) ? weight : nil
+            return compiled.terms.allSatisfy({ text.contains($0) }) ? weight : nil
         case .countOf(_, let minimum, let weight):
-            let count = compiled.terms.reduce(0) { $0 + (text.contains(normalized: $1) ? 1 : 0) }
+            let count = compiled.terms.reduce(0) { $0 + (text.contains($1) ? 1 : 0) }
             return count >= minimum ? weight : nil
         case .host(_, let weight):
             let hit = text.urlHosts.contains { host in
-                compiled.terms.contains { host == $0 || host.hasSuffix("." + $0) }
+                compiled.terms.contains { host == $0.text || host.hasSuffix("." + $0.text) }
             }
             return hit ? weight : nil
         case .textDensity(let minimum, let weight):
@@ -189,6 +255,17 @@ struct RuleEngine: Sendable {
             return features.textDensity >= minimum ? weight : nil
         case .lineCount(let minimum, let weight):
             return text.lineCount >= minimum ? weight : nil
+        case .capsCaption(let minLines, let weight):
+            // Few lines overall: a feed or article full of headings is not a meme
+            return layout.capsCaptionLines >= minLines && layout.lineCount <= 16 && layout.capsCaptionSpread >= 0.25 ? weight : nil
+        case .quoteAttribution(let weight):
+            return layout.hasQuoteAttribution && layout.lineCount <= 14 ? weight : nil
+        case .timeRangeCount(let minimum, let weight):
+            return layout.timeRanges >= minimum ? weight : nil
+        case .relativeTimeCount(let minimum, let weight):
+            return layout.relativeTimes >= minimum ? weight : nil
+        case .lockScreenDate(let weight):
+            return layout.hasLockScreenDate ? weight : nil
         }
     }
 }
