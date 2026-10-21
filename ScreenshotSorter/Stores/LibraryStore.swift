@@ -17,6 +17,12 @@ final class LibraryStore {
     private(set) var entityTypes: [String: Set<EntityType>] = [:]
     /// Bumped on every change (cheap observation hook for derived caches)
     private(set) var revision = 0
+    /// Bumped when which screenshots exist, their order or smart-collection membership changes —
+    /// not when a screenshot's analysis updates. Grids key their layout on this so a sorting batch
+    /// only re-renders the visible cells.
+    private(set) var structureEpoch = 0
+    /// Per-category membership versions (see `orderVersion(for:)`)
+    private(set) var categoryVersions: [ScreenshotCategory: Int] = [:]
 
     @ObservationIgnored private var sortedCache: [CollectionKind: [String]] = [:]
 
@@ -58,6 +64,27 @@ final class LibraryStore {
         let ids = sortedIDs(for: kind)
         let screenshots = ids.prefix(limit).compactMap { items[$0] }
         return makeCollection(kind, screenshots: screenshots, count: ids.count)
+    }
+
+    /// Changes whenever the members or order of `kind` change (cheap to observe).
+    func orderVersion(for kind: CollectionKind) -> Int {
+        switch kind {
+        case .all, .smart:
+            return structureEpoch
+        case .category(let category):
+            return structureEpoch &* 1_000_003 &+ (categoryVersions[category] ?? 0)
+        }
+    }
+
+    /// Member ids, newest first. Pair with `orderVersion(for:)` to cache derived layouts.
+    func ids(for kind: CollectionKind) -> [String] {
+        sortedIDs(for: kind)
+    }
+
+    /// Title and icon without touching members (no dependency on analysis updates).
+    func header(for kind: CollectionKind) -> (title: String, icon: String) {
+        let collection = makeCollection(kind, screenshots: [], count: 0)
+        return (collection.title, collection.icon)
     }
 
     private func sortedIDs(for kind: CollectionKind) -> [String] {
@@ -151,6 +178,7 @@ final class LibraryStore {
         analyzedCount = screenshots.reduce(0) { $0 + ($1.tier >= .fast ? 1 : 0) }
         unreviewedCount = screenshots.reduce(0) { $0 + ($1.isReviewed ? 0 : 1) }
         sortedCache.removeAll()
+        structureEpoch += 1
         revision += 1
     }
 
@@ -165,6 +193,7 @@ final class LibraryStore {
             .sorted { $0.creationDate > $1.creationDate }
             .map(\.id)
         sortedCache[.all] = nil
+        structureEpoch += 1
         revision += 1
     }
 
@@ -184,12 +213,14 @@ final class LibraryStore {
         orderedIDs.removeAll { removed.contains($0) }
         sortedCache[.all] = nil
         for collection in smartCollections { sortedCache[.smart(id: collection.id)] = nil }
+        structureEpoch += 1
         revision += 1
     }
 
     /// Apply analysis results. Cost is proportional to the batch, not the library.
     func apply(_ summaries: [RecordSummary], records: [AnalysisRecord] = []) {
         guard !summaries.isEmpty else { return }
+        var changedCategories = Set<ScreenshotCategory>()
         for summary in summaries {
             guard let existing = items[summary.id] else { continue }
             let updated = Screenshot(id: existing.id, asset: existing.asset, creationDate: existing.creationDate, summary: summary)
@@ -202,15 +233,22 @@ final class LibraryStore {
             for category in oldCategories.subtracting(newCategories) {
                 membersByCategory[category]?.remove(summary.id)
                 removeSorted(summary.id, date: existing.creationDate, from: .category(category))
+                changedCategories.insert(category)
             }
             for category in newCategories.subtracting(oldCategories) {
                 membersByCategory[category, default: []].insert(summary.id)
                 insertSorted(summary.id, date: existing.creationDate, into: .category(category))
+                changedCategories.insert(category)
             }
             items[summary.id] = updated
         }
         for record in records where items[record.id] != nil {
             entityTypes[record.id] = Set(record.entities.map(\.type))
+        }
+        if !changedCategories.isEmpty {
+            var versions = categoryVersions
+            for category in changedCategories { versions[category, default: 0] += 1 }
+            categoryVersions = versions
         }
         revision += 1
     }
@@ -263,6 +301,7 @@ final class LibraryStore {
         for kind in sortedCache.keys {
             if case .smart = kind { sortedCache[kind] = nil }
         }
+        structureEpoch += 1
         revision += 1
     }
 

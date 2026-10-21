@@ -58,7 +58,7 @@ struct SearchResultsView: View {
         .dsAnimation(Motion.snappy, value: results.map(\.id))
         .fullScreenCover(item: $selection) { item in
             PhotoDetailView(
-                screenshots: screenshots,
+                ids: screenshots.map(\.id),
                 initialID: item.id,
                 context: nil,
                 onCurrentChange: { id in currentID = id }

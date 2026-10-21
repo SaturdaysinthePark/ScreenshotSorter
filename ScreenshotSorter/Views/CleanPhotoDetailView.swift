@@ -8,7 +8,9 @@ import UIKit
 /// and an "Insight" drawer with everything we read from the screenshot.
 
 struct PhotoDetailView: View {
-    let screenshots: [Screenshot]
+    /// Pager order. Screenshots are looked up by id per visible page, so a 25k-item pager doesn't
+    /// rebuild its page list on every frame of a drag.
+    let pageIDs: [String]
     let initialID: String
     let context: CollectionKind?
     let onCurrentChange: ((String) -> Void)?
@@ -33,14 +35,15 @@ struct PhotoDetailView: View {
     @State private var sharePayload: ScreenshotSharePayload?
     @State private var isPreparingShare: Bool = false
     @State private var toast: DetailToast?
+    @State private var pageCache: DetailPageCache = DetailPageCache()
 
     init(
-        screenshots: [Screenshot],
+        ids: [String],
         initialID: String,
         context: CollectionKind? = nil,
         onCurrentChange: ((String) -> Void)? = nil
     ) {
-        self.screenshots = screenshots
+        self.pageIDs = ids
         self.initialID = initialID
         self.context = context
         self.onCurrentChange = onCurrentChange
@@ -51,8 +54,8 @@ struct PhotoDetailView: View {
     // MARK: Body
 
     var body: some View {
-        let pages: [Screenshot] = livePages
-        let current: Screenshot? = pages.first { $0.id == currentID }
+        let pages: DetailPages = livePages
+        let current: Screenshot? = pages.index[currentID] != nil ? model.library.screenshot(id: currentID) : nil
 
         GeometryReader { proxy in
             let metrics: DrawerMetrics = DrawerMetrics(containerHeight: proxy.size.height, peekHeight: peekHeight)
@@ -92,7 +95,7 @@ struct PhotoDetailView: View {
             isZoomed = false
             onCurrentChange?(newValue)
         }
-        .onChange(of: pages.count) { _, _ in
+        .onChange(of: pages.ids.count) { _, _ in
             ensureValidCurrent()
         }
         .confirmationDialog(
@@ -119,16 +122,13 @@ struct PhotoDetailView: View {
 
     // MARK: Derived
 
-    /// The snapshot passed in, minus deletions, with fresh analysis data from the library.
-    private var livePages: [Screenshot] {
-        var result: [Screenshot] = []
-        result.reserveCapacity(screenshots.count)
-        for screenshot in screenshots where !deletedIDs.contains(screenshot.id) {
-            if let live = model.library.screenshot(id: screenshot.id) {
-                result.append(live)
-            }
+    /// The ids passed in, minus deletions and anything no longer in the library. Rebuilt only when
+    /// screenshots are removed, not per body (bodies run every frame while dragging).
+    private var livePages: DetailPages {
+        let library: LibraryStore = model.library
+        return pageCache.value(epoch: library.structureEpoch, deletedCount: deletedIDs.count) {
+            DetailPages(ids: pageIDs.filter { !deletedIDs.contains($0) && library.screenshot(id: $0) != nil })
         }
-        return result
     }
 
     private var backgroundOpacity: Double {
@@ -160,7 +160,7 @@ struct PhotoDetailView: View {
             .dsAnimation(Motion.gentle, value: showChrome)
     }
 
-    private func pager(pages: [Screenshot], progress: CGFloat, topInset: CGFloat) -> some View {
+    private func pager(pages: DetailPages, progress: CGFloat, topInset: CGFloat) -> some View {
         let dragY: CGFloat = dismissOffset.height
         let downward: CGFloat = max(0, dragY)
         let dragProgress: CGFloat = min(1, downward / 320)
@@ -171,8 +171,14 @@ struct PhotoDetailView: View {
 
         return ScrollViewReader { reader in
             pagerScrollView(pages: pages)
-                .onAppear {
-                    // Belt and braces: make sure the first frame shows the tapped screenshot.
+                .task {
+                    // `onAppear` runs before the lazy pager has laid out any page, so scrolling there
+                    // (or relying on the initial scroll position alone) could open on the first
+                    // screenshot instead of the tapped one. Scroll once the first layout has happened.
+                    await Task.yield()
+                    reader.scrollTo(initialID)
+                    try? await Task.sleep(for: .milliseconds(50))
+                    if scrollID != initialID { scrollID = initialID }
                     reader.scrollTo(initialID)
                 }
         }
@@ -182,28 +188,33 @@ struct PhotoDetailView: View {
         .offset(x: dismissOffset.width * 0.5, y: yOffset)
     }
 
-    private func pagerScrollView(pages: [Screenshot]) -> some View {
+    private func pagerScrollView(pages: DetailPages) -> some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
-                ForEach(pages) { screenshot in
-                    ZoomablePhotoPage(
-                        screenshot: screenshot,
-                        isActive: screenshot.id == currentID,
-                        onSingleTap: { handleSingleTap() },
-                        onZoomChange: { zoomed in
-                            if isZoomed != zoomed {
-                                isZoomed = zoomed
-                            }
-                        },
-                        onDismissDrag: { translation in
-                            handleDismissDrag(translation)
-                        },
-                        onDismissEnd: { translation, velocity in
-                            handleDismissEnd(translation: translation, velocity: velocity)
-                        },
-                        onPinchDismiss: { dismissViewer() }
-                    )
+                ForEach(pages.ids, id: \.self) { id in
+                    // One concrete view per page (the lookup happens inside), so scroll-position
+                    // identity resolves and the pager opens on the tapped screenshot.
+                    DetailPage(id: id) { screenshot in
+                        ZoomablePhotoPage(
+                            screenshot: screenshot,
+                            isActive: screenshot.id == currentID,
+                            onSingleTap: { handleSingleTap() },
+                            onZoomChange: { zoomed in
+                                if isZoomed != zoomed {
+                                    isZoomed = zoomed
+                                }
+                            },
+                            onDismissDrag: { translation in
+                                handleDismissDrag(translation)
+                            },
+                            onDismissEnd: { translation, velocity in
+                                handleDismissEnd(translation: translation, velocity: velocity)
+                            },
+                            onPinchDismiss: { dismissViewer() }
+                        )
+                    }
                     .containerRelativeFrame([.horizontal, .vertical])
+                    .id(id)
                 }
             }
             .scrollTargetLayout()
@@ -217,7 +228,7 @@ struct PhotoDetailView: View {
 
     private func chromeLayer(
         current: Screenshot?,
-        pages: [Screenshot],
+        pages: DetailPages,
         metrics: DrawerMetrics,
         visible: CGFloat,
         progress: CGFloat
@@ -249,7 +260,7 @@ struct PhotoDetailView: View {
                     progress: progress,
                     visibleHeight: visible,
                     expandedHeight: metrics.expanded,
-                    canJump: { id in pages.contains { $0.id == id } },
+                    canJump: { id in pages.index[id] != nil },
                     onPeekHeight: { height in
                         if abs(peekHeight - height) > 0.5 {
                             peekHeight = height
@@ -288,7 +299,7 @@ struct PhotoDetailView: View {
 
     // MARK: Top bar
 
-    private func topBar(current: Screenshot?, pages: [Screenshot]) -> some View {
+    private func topBar(current: Screenshot?, pages: DetailPages) -> some View {
         GlassEffectContainer(spacing: Space.sm) {
             HStack(spacing: Space.sm) {
                 Button {
@@ -357,8 +368,8 @@ struct PhotoDetailView: View {
         }
     }
 
-    private func titleCapsule(current: Screenshot, pages: [Screenshot]) -> some View {
-        let index: Int = (pages.firstIndex { $0.id == current.id } ?? 0) + 1
+    private func titleCapsule(current: Screenshot, pages: DetailPages) -> some View {
+        let index: Int = (pages.index[current.id] ?? 0) + 1
         let dayText: String = DetailDates.dayTitle(current.creationDate)
         let timeText: String = current.creationDate.formatted(date: .omitted, time: .shortened)
         return VStack(spacing: 0) {
@@ -366,8 +377,8 @@ struct PhotoDetailView: View {
                 .font(.dsCaption.weight(.heavy))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-            if pages.count > 1 {
-                Text(Brand.Copy.Detail.position(index, pages.count))
+            if pages.ids.count > 1 {
+                Text(Brand.Copy.Detail.position(index, pages.ids.count))
                     .font(.caption2)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -459,7 +470,7 @@ struct PhotoDetailView: View {
     }
 
     private func jump(to id: String) {
-        guard livePages.contains(where: { $0.id == id }) else { return }
+        guard livePages.index[id] != nil else { return }
         HapticManager.shared.pageTurn()
         Motion.perform(Motion.gentle, reduceMotion: reduceMotion) {
             drawerExpanded = false
@@ -470,14 +481,14 @@ struct PhotoDetailView: View {
     }
 
     private func ensureValidCurrent() {
-        let pages: [Screenshot] = livePages
-        guard !pages.contains(where: { $0.id == currentID }) else { return }
-        guard let first = pages.first else {
+        let pages: DetailPages = livePages
+        guard pages.index[currentID] == nil else { return }
+        guard let first = pages.ids.first else {
             dismissViewer()
             return
         }
-        currentID = first.id
-        scrollID = first.id
+        currentID = first
+        scrollID = first
     }
 
     // MARK: Actions
@@ -501,22 +512,22 @@ struct PhotoDetailView: View {
 
     private func deleteCurrent() {
         let id: String = currentID
-        let pagesBefore: [Screenshot] = livePages
-        let index: Int = pagesBefore.firstIndex { $0.id == id } ?? 0
+        let pagesBefore: DetailPages = livePages
+        let index: Int = pagesBefore.index[id] ?? 0
         Task {
             let success: Bool = await model.delete([id])
             guard success else {
                 showToast(Brand.Copy.Completion.deleteCancelled, systemImage: "hand.raised.fill", tint: Palette.inkSecondary)
                 return
             }
-            let remaining: [Screenshot] = pagesBefore.filter { $0.id != id }
+            let remaining: [String] = pagesBefore.ids.filter { $0 != id }
             guard !remaining.isEmpty else {
                 deletedIDs.insert(id)
                 dismissViewer()
                 return
             }
             let nextIndex: Int = min(index, remaining.count - 1)
-            let nextID: String = remaining[nextIndex].id
+            let nextID: String = remaining[nextIndex]
             Motion.perform(Motion.gentle, reduceMotion: reduceMotion) {
                 deletedIDs.insert(id)
                 currentID = nextID
@@ -1840,6 +1851,51 @@ struct VerticalPanGesture: UIGestureRecognizerRepresentable {
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
             true
+        }
+    }
+}
+
+// MARK: - Page index
+
+struct DetailPages {
+    let ids: [String]
+    let index: [String: Int]
+
+    init(ids: [String]) {
+        self.ids = ids
+        var index: [String: Int] = [:]
+        index.reserveCapacity(ids.count)
+        for (offset, id) in ids.enumerated() { index[id] = offset }
+        self.index = index
+    }
+}
+
+@MainActor
+final class DetailPageCache {
+    private var key: (epoch: Int, deletedCount: Int)?
+    private var cached: DetailPages?
+
+    func value(epoch: Int, deletedCount: Int, build: () -> DetailPages) -> DetailPages {
+        if let key, let cached, key.epoch == epoch, key.deletedCount == deletedCount { return cached }
+        let pages = build()
+        key = (epoch, deletedCount)
+        cached = pages
+        return pages
+    }
+}
+
+/// Looks a pager page up by id inside its own body (keeps the pager's `ForEach` content uniform).
+private struct DetailPage<Content: View>: View {
+    let id: String
+    @ViewBuilder let content: (Screenshot) -> Content
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let screenshot = model.library.screenshot(id: id) {
+            content(screenshot)
+        } else {
+            Color.clear
         }
     }
 }

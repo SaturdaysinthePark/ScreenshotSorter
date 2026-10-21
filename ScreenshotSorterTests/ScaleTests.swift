@@ -149,13 +149,18 @@ struct ScaleTests {
         let batch = AnalysisScheduler.flushBatchSize
         let batches = updates.count / batch
         let total = ScaleTests.measure("apply + gallery read ×\(batches) at \(ScaleTests.librarySize)") {
+            let version = library.orderVersion(for: .all)
+            let visible = library.ids(for: .all).prefix(40)
             for index in 0..<batches {
                 library.apply(Array(updates[index * batch..<(index + 1) * batch]))
-                _ = library.screenshots(for: .all).count
+                // What the gallery does per batch: layout cache hit, visible cells re-read, header count
+                #expect(library.orderVersion(for: .all) == version)
+                for id in visible { _ = library.screenshot(id: id)?.tier }
+                _ = library.count - library.analyzedCount
             }
         }
         print("⏱ per batch with gallery open: \(total / batches)")
-        #expect(total / batches < .milliseconds(8), "gallery refresh costs \(total / batches) per flush")
+        #expect(total / batches < .milliseconds(1), "gallery refresh costs \(total / batches) per flush")
     }
 
     /// Cached orderings are patched in place on every batch; they must equal a fresh sort.
@@ -187,6 +192,57 @@ struct ScaleTests {
             #expect(library.screenshots(for: .category(category)).map(\.id) == fresh.screenshots(for: .category(category)).map(\.id), "\(category.key)")
         }
         #expect(library.analyzedCount == fresh.analyzedCount)
+    }
+
+    /// Sorting changes what screenshots are *about*, not which exist or their order, so the All
+    /// Screenshots grid must not rebuild its layout during a first sort.
+    @Test @MainActor func gridLayoutVersionIsStableWhileSorting() {
+        let library = ScaleTests.library(count: ScaleTests.librarySize, analyzed: false)
+        let all = library.orderVersion(for: .all)
+        let category = ScaleTests.categories[0]
+        let categoryBefore = library.orderVersion(for: .category(category))
+        let updates = ScaleTests.summaries(count: 2_000, analyzed: true)
+        for start in stride(from: 0, to: updates.count, by: AnalysisScheduler.flushBatchSize) {
+            library.apply(Array(updates[start..<min(start + AnalysisScheduler.flushBatchSize, updates.count)]))
+        }
+        #expect(library.orderVersion(for: .all) == all)
+        #expect(library.orderVersion(for: .category(category)) != categoryBefore)
+    }
+
+    /// Month sections are computed once per boundary; they must match per-item calendar math.
+    @Test func gallerySectionsMatchReferenceAndScale() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date()
+        // Newest first, every 37 minutes back over ~2 years, crossing today/yesterday/week/month/year
+        let dates: [String: Date] = Dictionary(uniqueKeysWithValues: (0..<ScaleTests.librarySize).map {
+            ("asset-\($0)", now.addingTimeInterval(-Double($0) * 37 * 60))
+        })
+        let ids = (0..<ScaleTests.librarySize).map { "asset-\($0)" }
+        var sections: [GallerySection] = []
+        let elapsed = ScaleTests.measure("GallerySection.make \(ids.count)") {
+            sections = GallerySection.make(ids: ids, date: { dates[$0]! }, groupByDate: true, now: now, calendar: calendar)
+        }
+        #expect(sections.flatMap(\.ids) == ids)
+        #expect(elapsed < .milliseconds(60), "sectioning takes \(elapsed)")
+
+        // Reference: classify each date on its own
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday)!
+        let startOfWeek = calendar.date(byAdding: .day, value: -6, to: startOfToday)!
+        func key(_ date: Date) -> String {
+            if date >= startOfToday { return "today" }
+            if date >= startOfYesterday { return "yesterday" }
+            if date >= startOfWeek { return "week" }
+            let c = calendar.dateComponents([.year, .month], from: date)
+            return "m-\(c.year!)-\(c.month!)"
+        }
+        var expected: [(String, Int)] = []
+        for id in ids {
+            let k = key(dates[id]!)
+            if expected.last?.0 == k { expected[expected.count - 1].1 += 1 } else { expected.append((k, 1)) }
+        }
+        #expect(sections.map(\.id) == expected.map(\.0))
+        #expect(sections.map(\.ids.count) == expected.map(\.1))
     }
 
     @Test @MainActor func resetLoadsLargeLibraryQuickly() {

@@ -155,6 +155,10 @@ final class AppModel {
             await loadLibrary()
         }
         Task { await FMClassifier.shared.prewarm() }
+        #if DEBUG
+        // QA: start paused so UI timing isn't skewed by analysis (`-QAPauseAnalysis YES`)
+        if UserDefaults.standard.bool(forKey: "QAPauseAnalysis") && !progress.isPaused { togglePause() }
+        #endif
     }
 
     func requestPhotoAccess() {

@@ -57,6 +57,15 @@ struct CollectionsView: View {
                 }
             )
         }
+        #if DEBUG
+        .task {
+            // QA: open All Screenshots on launch (`-QAOpenGallery YES`), e.g. with `-QAAutoScroll YES`
+            if UserDefaults.standard.bool(forKey: "QAOpenGallery"), path.isEmpty {
+                try? await Task.sleep(for: .seconds(1))
+                path.append(CollectionKind.all)
+            }
+        }
+        #endif
         .alert(Brand.Copy.Home.reanalyzeConfirmTitle, isPresented: $showReanalyzeConfirm) {
             Button(Brand.Copy.Home.reanalyze) { model.reanalyzeAll() }
             Button(Brand.Copy.Banners.later, role: .cancel) {}

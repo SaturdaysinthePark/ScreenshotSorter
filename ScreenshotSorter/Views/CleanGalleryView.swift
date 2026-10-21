@@ -12,10 +12,13 @@ enum GalleryMetrics {
     /// Thumbnail request size (points) for compact / regular widths. Detail view looks these up for its crossfade.
     static let compactThumbnailPoints: CGFloat = 140
     static let regularThumbnailPoints: CGFloat = 220
-    /// How many upcoming assets to pre-cache after the last visible cell.
-    static let prefetchCount: Int = 24
+    /// Thumbnails kept warm ahead of / behind the scroll position (in cells).
+    static let prefetchLead: Int = 36
+    static let prefetchTrail: Int = 12
     /// Seconds the undo toast stays up.
     static let undoDuration: Double = 5
+    /// Cell accessibility dates (one shared style instead of one per cell render)
+    static let cellDateStyle = Date.FormatStyle(date: .abbreviated, time: .shortened)
 }
 
 // MARK: - Clean Gallery View
@@ -46,6 +49,10 @@ struct CleanGalleryView: View {
     @State private var showInlineTitle: Bool = false
     @State private var visibility: GalleryVisibilityTracker = GalleryVisibilityTracker()
     @State private var derivedCache: GalleryDerivedCache = GalleryDerivedCache()
+    @State private var prefetcher: GalleryPrefetcher = GalleryPrefetcher()
+    #if DEBUG
+    @State private var qaScrollPosition: ScrollPosition = ScrollPosition()
+    #endif
 
     init(kind: CollectionKind, zoomNamespace: Namespace.ID? = nil) {
         self.kind = kind
@@ -55,62 +62,55 @@ struct CleanGalleryView: View {
     // MARK: Body
 
     var body: some View {
-        // Sections, counts and ids are O(library); rebuild them once per library change, not per body
-        let derived: GalleryDerived = derivedCache.value(revision: model.library.revision, kind: kind, sort: sortOption) {
-            let collection: ScreenshotCollection = model.library.collection(for: kind)
-            let items: [Screenshot] = orderedItems(collection)
-            return GalleryDerived(
-                collection: collection,
-                items: items,
-                sections: GallerySection.make(from: items, groupByDate: sortOption != .relevancy),
-                ids: items.map { $0.id },
-                unsortedCount: unsortedCount(items),
-                thisWeekCount: thisWeekCount(items)
-            )
-        }
-        let collection: ScreenshotCollection = derived.collection
-        let items: [Screenshot] = derived.items
+        // The layout (ids, sections) only depends on membership and order, so an analysis batch
+        // doesn't re-render this body; visible cells look up their own screenshot (`GalleryItem`).
+        let derived: GalleryDerived = currentDerived
+        let header: (title: String, icon: String) = model.library.header(for: kind)
         let sections: [GallerySection] = derived.sections
         let ids: [String] = derived.ids
 
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    GalleryHeader(
-                        title: collection.title,
-                        icon: collection.icon,
+                    GalleryLiveHeader(
+                        kind: kind,
+                        ids: ids,
+                        title: header.title,
+                        icon: header.icon,
                         eyebrow: eyebrow,
                         tint: tint,
                         gradient: gradient,
-                        count: items.count,
-                        unsortedCount: derived.unsortedCount,
                         thisWeekCount: derived.thisWeekCount
                     )
                     .padding(.bottom, Space.md)
 
-                    if items.isEmpty {
-                        GalleryEmptyState(icon: collection.icon, tint: tint)
+                    if ids.isEmpty {
+                        GalleryEmptyState(icon: header.icon, tint: tint)
                             .transition(AnyTransition.opacity)
                     } else {
                         ForEach(sections) { section in
                             Section {
                                 LazyVGrid(columns: columns, spacing: GalleryMetrics.spacing) {
-                                    ForEach(section.items) { screenshot in
-                                        cell(for: screenshot, items: items)
+                                    ForEach(section.ids, id: \.self) { id in
+                                        cell(id: id)
+                                            .id(id)
                                     }
                                 }
                             } header: {
                                 if let title = section.title {
-                                    GallerySectionHeader(title: title, count: section.items.count)
+                                    GallerySectionHeader(title: title, count: section.ids.count)
                                 }
                             }
                         }
                     }
                 }
                 .padding(.bottom, bottomContentPadding)
-                .dsAnimation(Motion.gentle, value: ids)
+                .dsAnimation(Motion.gentle, value: derived.token)
             }
             .scrollIndicators(.automatic)
+            #if DEBUG
+            .scrollPosition($qaScrollPosition)
+            #endif
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top > 72
             } action: { _, isPastHeader in
@@ -124,24 +124,42 @@ struct CleanGalleryView: View {
                 guard viewer != nil, !newID.isEmpty else { return }
                 proxy.scrollTo(newID, anchor: .center)
             }
+            #if DEBUG
+            .task {
+                // QA: scripted scrolling for frame-timing runs without UI-test input (`-QAAutoScroll YES`)
+                guard UserDefaults.standard.bool(forKey: "QAAutoScroll") else { return }
+                try? await Task.sleep(for: .seconds(3))
+                guard currentDerived.ids.count > 120 else { return }
+                NSLog("QA-AUTOSCROLL start %f", Date().timeIntervalSince1970)
+                // ~20 rows per jump, down ~25 screens and back: roughly a fast fling's load
+                let speed: Double = max(0.25, UserDefaults.standard.double(forKey: "QAAutoScrollSpeed").nonZero ?? 1)
+                let stops: [CGFloat] = Array(stride(from: 1_200, through: 30_000, by: 1_200))
+                for y in stops + stops.reversed().dropFirst() + [0] {
+                    withAnimation(.easeInOut(duration: 0.7 / speed)) { qaScrollPosition.scrollTo(y: y) }
+                    try? await Task.sleep(for: .milliseconds(Int(900 / speed)))
+                }
+                NSLog("QA-AUTOSCROLL end %f", Date().timeIntervalSince1970)
+            }
+            #endif
         }
         .background { backgroundLayer }
-        .navigationTitle(collection.title)
+        .navigationTitle(header.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(isSelecting)
-        .toolbar { toolbarContent(items: items, collection: collection) }
+        .toolbar { toolbarContent(ids: ids, header: header) }
         .overlay(alignment: .bottom) {
-            bottomStack(items: items)
+            bottomStack()
         }
-        .onChange(of: ids) { _, newIDs in
-            pruneSelection(to: newIDs)
+        .onChange(of: derived.token) { _, _ in
+            pruneSelection(to: currentDerived.ids)
         }
         .onDisappear {
             visibility.cancel()
+            prefetcher.reset(size: ThumbnailLoader.pixelSize(points: thumbnailPoints))
         }
         .fullScreenCover(item: $viewer) { session in
             PhotoDetailView(
-                screenshots: session.screenshots,
+                ids: session.ids,
                 initialID: session.initialID,
                 context: kind,
                 onCurrentChange: { id in
@@ -223,7 +241,7 @@ struct CleanGalleryView: View {
         case .category(let category):
             return category.displayName
         case .all, .smart:
-            return model.library.collection(for: kind).title
+            return model.library.header(for: kind).title
         }
     }
 
@@ -281,27 +299,37 @@ struct CleanGalleryView: View {
         )
     }
 
-    private func orderedItems(_ collection: ScreenshotCollection) -> [Screenshot] {
-        switch sortOption {
-        case .dateDescending:
-            return collection.screenshots
-        case .dateAscending:
-            return Array(collection.screenshots.reversed())
-        case .relevancy:
-            return collection.sorted(by: .relevancy)
-        }
-    }
-
-    private func unsortedCount(_ items: [Screenshot]) -> Int {
-        items.reduce(0) { partial, screenshot in
-            partial + (screenshot.tier == .none ? 1 : 0)
-        }
-    }
-
-    private func thisWeekCount(_ items: [Screenshot]) -> Int {
-        let cutoff: Date = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        return items.reduce(0) { partial, screenshot in
-            partial + (screenshot.creationDate >= cutoff ? 1 : 0)
+    /// Layout for the current sort, rebuilt only when membership/order changes (relevancy depends on
+    /// scores, so it follows every library revision instead).
+    private var currentDerived: GalleryDerived {
+        let library: LibraryStore = model.library
+        let version: Int = sortOption == .relevancy ? library.revision : library.orderVersion(for: kind)
+        return derivedCache.value(version: version, kind: kind, sort: sortOption) {
+            let ids: [String]
+            switch sortOption {
+            case .dateDescending:
+                ids = library.ids(for: kind)
+            case .dateAscending:
+                ids = Array(library.ids(for: kind).reversed())
+            case .relevancy:
+                ids = library.collection(for: kind).sorted(by: .relevancy).map { $0.id }
+            }
+            let date: (String) -> Date = { library.screenshot(id: $0)?.creationDate ?? .distantPast }
+            let cutoff: Date = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+            var indexByID: [String: Int] = [:]
+            indexByID.reserveCapacity(ids.count)
+            var thisWeek: Int = 0
+            for (index, id) in ids.enumerated() {
+                indexByID[id] = index
+                if date(id) >= cutoff { thisWeek += 1 }
+            }
+            return GalleryDerived(
+                ids: ids,
+                indexByID: indexByID,
+                sections: GallerySection.make(ids: ids, date: date, groupByDate: sortOption != .relevancy),
+                thisWeekCount: thisWeek,
+                token: 0
+            )
         }
     }
 
@@ -317,42 +345,23 @@ struct CleanGalleryView: View {
 
     // MARK: Cells
 
-    private func cell(for screenshot: Screenshot, items: [Screenshot]) -> some View {
-        let isSelected: Bool = selection.contains(screenshot.id)
-        let dateText: String = screenshot.creationDate.formatted(date: .abbreviated, time: .shortened)
-        var label: String = Brand.Copy.Gallery.cellAccessibility(title: screenshot.title, date: dateText)
-        if screenshot.tier == .none {
-            label += ". " + Brand.Copy.Gallery.notSortedYet
-        }
-        return GalleryCell(
-            screenshot: screenshot,
+    private func cell(id: String) -> some View {
+        GalleryItem(
+            id: id,
             tint: tint,
             thumbnailPoints: thumbnailPoints,
             isSelecting: isSelecting,
-            isSelected: isSelected
+            isSelected: selection.contains(id),
+            namespace: photoNamespace,
+            transition: cellTransition,
+            onTap: { screenshot in handleTap(screenshot) },
+            onAppear: {
+                visibility.noteAppeared(id) { visibleIDs, lastID in
+                    handleVisible(visibleIDs, lastID: lastID)
+                }
+            },
+            menu: { screenshot in cellMenu(for: screenshot) }
         )
-        .matchedTransitionSource(id: screenshot.id, in: photoNamespace)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            handleTap(screenshot, items: items)
-        }
-        .contextMenu {
-            cellMenu(for: screenshot)
-        }
-        .onAppear {
-            visibility.noteAppeared(screenshot.id) { visibleIDs, lastID in
-                handleVisible(visibleIDs, lastID: lastID, items: items)
-            }
-        }
-        .transition(cellTransition)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(isSelected ? Brand.Copy.Gallery.selected : "")
-        .accessibilityHint(isSelecting ? Brand.Copy.Gallery.selectHint : Brand.Copy.Gallery.openHint)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
-        .accessibilityAction {
-            handleTap(screenshot, items: items)
-        }
     }
 
     private var cellTransition: AnyTransition {
@@ -399,9 +408,9 @@ struct CleanGalleryView: View {
     // MARK: Toolbar
 
     @ToolbarContentBuilder
-    private func toolbarContent(items: [Screenshot], collection: ScreenshotCollection) -> some ToolbarContent {
+    private func toolbarContent(ids: [String], header: (title: String, icon: String)) -> some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            GalleryInlineTitle(title: collection.title, icon: collection.icon, tint: tint)
+            GalleryInlineTitle(title: header.title, icon: header.icon, tint: tint)
                 .opacity(showInlineTitle ? 1 : 0)
                 .offset(y: showInlineTitle ? 0 : 6)
                 .accessibilityHidden(!showInlineTitle)
@@ -409,9 +418,9 @@ struct CleanGalleryView: View {
 
         if isSelecting {
             ToolbarItem(placement: .topBarLeading) {
-                let allSelected: Bool = !items.isEmpty && selection.count >= items.count
+                let allSelected: Bool = !ids.isEmpty && selection.count >= ids.count
                 Button(allSelected ? Brand.Copy.Gallery.deselectAll : Brand.Copy.Gallery.selectAll) {
-                    toggleSelectAll(items, allSelected: allSelected)
+                    toggleSelectAll(ids, allSelected: allSelected)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -429,7 +438,7 @@ struct CleanGalleryView: View {
                 Button(Brand.Copy.Gallery.select) {
                     enterSelection(with: nil)
                 }
-                .disabled(items.isEmpty)
+                .disabled(ids.isEmpty)
             }
         }
     }
@@ -462,7 +471,7 @@ struct CleanGalleryView: View {
 
     // MARK: Bottom chrome
 
-    private func bottomStack(items: [Screenshot]) -> some View {
+    private func bottomStack() -> some View {
         VStack(spacing: Space.sm) {
             if let suggestion = model.propagationSuggestion, viewer == nil, !isSelecting {
                 GalleryPropagationCard(
@@ -484,10 +493,10 @@ struct CleanGalleryView: View {
                     showsRemove: canRemove,
                     removeName: removeTargetName,
                     isPreparingShare: isPreparingShare,
-                    onShare: { share(selectedIDs(in: items)) },
-                    onMove: { moveRequest = GalleryIDsRequest(ids: selectedIDs(in: items)) },
-                    onRemove: { performRemove(selectedIDs(in: items)) },
-                    onDelete: { deleteRequest = GalleryIDsRequest(ids: selectedIDs(in: items)) }
+                    onShare: { share(selectedIDs()) },
+                    onMove: { moveRequest = GalleryIDsRequest(ids: selectedIDs()) },
+                    onRemove: { performRemove(selectedIDs()) },
+                    onDelete: { deleteRequest = GalleryIDsRequest(ids: selectedIDs()) }
                 )
                 .transition(floatTransition)
             }
@@ -520,7 +529,7 @@ struct CleanGalleryView: View {
 
     // MARK: Interaction
 
-    private func handleTap(_ screenshot: Screenshot, items: [Screenshot]) {
+    private func handleTap(_ screenshot: Screenshot) {
         if isSelecting {
             HapticManager.shared.selectionChanged()
             Motion.perform(Motion.bouncy, reduceMotion: reduceMotion) {
@@ -534,23 +543,22 @@ struct CleanGalleryView: View {
         }
         HapticManager.shared.lightTap()
         zoomSourceID = screenshot.id
-        viewer = GalleryViewerSession(screenshots: items, initialID: screenshot.id)
+        viewer = GalleryViewerSession(ids: currentDerived.ids, initialID: screenshot.id)
     }
 
-    /// Batched from cell `onAppear`: prioritise analysis for what's on screen and pre-cache what's next.
-    private func handleVisible(_ visibleIDs: [String], lastID: String, items: [Screenshot]) {
+    /// Batched from cell `onAppear`: prioritise analysis for what's on screen and keep thumbnails
+    /// warm in a window around the scroll position (more ahead in the scroll direction).
+    private func handleVisible(_ visibleIDs: [String], lastID: String) {
         model.boost(visibleIDs)
-        guard let index = items.firstIndex(where: { $0.id == lastID }) else { return }
-        let lower: Int = index + 1
-        let upper: Int = min(items.count, index + 1 + GalleryMetrics.prefetchCount)
-        guard lower < upper else { return }
-        let assets: [PHAsset] = items[lower..<upper].map { $0.asset }
-        ThumbnailLoader.shared.startCaching(assets, size: ThumbnailLoader.pixelSize(points: thumbnailPoints))
+        let derived: GalleryDerived = currentDerived
+        guard let index = derived.indexByID[lastID] else { return }
+        prefetcher.update(around: index, in: derived.ids, library: model.library,
+                          size: ThumbnailLoader.pixelSize(points: thumbnailPoints))
     }
 
-    private func selectedIDs(in items: [Screenshot]) -> [String] {
+    private func selectedIDs() -> [String] {
         // Keep grid order so shares/moves feel predictable.
-        items.compactMap { selection.contains($0.id) ? $0.id : nil }
+        currentDerived.ids.filter { selection.contains($0) }
     }
 
     private func enterSelection(with id: String?) {
@@ -575,13 +583,13 @@ struct CleanGalleryView: View {
         selection = []
     }
 
-    private func toggleSelectAll(_ items: [Screenshot], allSelected: Bool) {
+    private func toggleSelectAll(_ ids: [String], allSelected: Bool) {
         HapticManager.shared.selectionChanged()
         Motion.perform(Motion.bouncy, reduceMotion: reduceMotion) {
             if allSelected {
                 selection = []
             } else {
-                selection = Set(items.map { $0.id })
+                selection = Set(ids)
             }
         }
     }
@@ -736,7 +744,7 @@ struct CleanGalleryView: View {
 /// A pager presentation: the list is snapshotted so paging is stable while analysis reorders the grid.
 struct GalleryViewerSession: Identifiable {
     let id: UUID = UUID()
-    let screenshots: [Screenshot]
+    let ids: [String]
     let initialID: String
 }
 
@@ -765,39 +773,77 @@ struct GalleryToast: Identifiable {
 }
 
 /// Date-bucketed slice of the grid ("Today", "Yesterday", "This week", months).
-/// Everything the gallery body derives from the library, cached per library revision.
+/// The gallery's layout: everything derived from membership and order, never from analysis content.
 struct GalleryDerived {
-    let collection: ScreenshotCollection
-    let items: [Screenshot]
-    let sections: [GallerySection]
     let ids: [String]
-    let unsortedCount: Int
+    let indexByID: [String: Int]
+    let sections: [GallerySection]
     let thisWeekCount: Int
+    /// Changes only when `ids` actually change (drives insert/remove animation and selection pruning)
+    var token: Int
 }
 
 @MainActor
 final class GalleryDerivedCache {
-    private var key: (revision: Int, kind: CollectionKind, sort: SortOption)?
+    private var key: (version: Int, kind: CollectionKind, sort: SortOption)?
     private var cached: GalleryDerived?
+    private var token: Int = 0
 
-    func value(revision: Int, kind: CollectionKind, sort: SortOption, build: () -> GalleryDerived) -> GalleryDerived {
-        if let key, let cached, key.revision == revision, key.kind == kind, key.sort == sort { return cached }
-        let value = build()
-        key = (revision, kind, sort)
+    func value(version: Int, kind: CollectionKind, sort: SortOption, build: () -> GalleryDerived) -> GalleryDerived {
+        if let key, let cached, key.version == version, key.kind == kind, key.sort == sort { return cached }
+        var value = build()
+        if value.ids != cached?.ids { token += 1 }
+        value.token = token
+        key = (version, kind, sort)
         cached = value
         return value
+    }
+}
+
+/// Keeps `PHCachingImageManager` warm for a window of cells around the scroll position and releases
+/// what scrolled far away (the old code only ever started caching, never stopped).
+@MainActor
+final class GalleryPrefetcher {
+    private var cached: [String: PHAsset] = [:]
+    private var lastIndex: Int = 0
+
+    func update(around index: Int, in ids: [String], library: LibraryStore, size: CGSize) {
+        let forward: Bool = index >= lastIndex
+        lastIndex = index
+        let lead: Int = forward ? GalleryMetrics.prefetchLead : GalleryMetrics.prefetchTrail
+        let trail: Int = forward ? GalleryMetrics.prefetchTrail : GalleryMetrics.prefetchLead
+        let lower: Int = max(0, index - trail)
+        let upper: Int = min(ids.count, index + lead + 1)
+        guard lower < upper else { return }
+        let window: ArraySlice<String> = ids[lower..<upper]
+        let windowSet: Set<String> = Set(window)
+        let start: [Screenshot] = library.screenshots(ids: window.filter { cached[$0] == nil })
+        let stop: [String] = cached.keys.filter { !windowSet.contains($0) }
+        ThumbnailLoader.shared.startCaching(start.map { $0.asset }, size: size)
+        ThumbnailLoader.shared.stopCaching(stop.compactMap { cached[$0] }, size: size)
+        for id in stop { cached[id] = nil }
+        for screenshot in start { cached[screenshot.id] = screenshot.asset }
+    }
+
+    func reset(size: CGSize) {
+        ThumbnailLoader.shared.stopCaching(Array(cached.values), size: size)
+        cached = [:]
+        lastIndex = 0
     }
 }
 
 struct GallerySection: Identifiable {
     let id: String
     let title: String?
-    let items: [Screenshot]
+    let ids: [String]
 
-    static func make(from items: [Screenshot], groupByDate: Bool, now: Date = Date(), calendar: Calendar = .current) -> [GallerySection] {
-        guard !items.isEmpty else { return [] }
+    /// Groups ids (in display order) into Today / Yesterday / This week / month sections.
+    /// Calendar math runs once per month boundary, not once per screenshot (25k items took ~50 ms).
+    static func make(ids: [String], date: (String) -> Date, groupByDate: Bool,
+                     now: Date = Date(), calendar: Calendar = .current) -> [GallerySection] {
+        guard !ids.isEmpty else { return [] }
         guard groupByDate else {
-            return [GallerySection(id: "all", title: nil, items: items)]
+            return [GallerySection(id: "all", title: nil, ids: ids)]
         }
 
         let startOfToday: Date = calendar.startOfDay(for: now)
@@ -809,7 +855,10 @@ struct GallerySection: Identifiable {
         var usedKeys: Set<String> = []
         var currentKey: String = ""
         var currentTitle: String = ""
-        var bucket: [Screenshot] = []
+        var bucket: [String] = []
+        var monthInterval: DateInterval?
+        var monthKey: String = ""
+        var monthTitle: String = ""
 
         func flush() {
             guard !bucket.isEmpty else { return }
@@ -820,42 +869,42 @@ struct GallerySection: Identifiable {
                 key = currentKey + "#" + String(suffix)
             }
             usedKeys.insert(key)
-            sections.append(GallerySection(id: key, title: currentTitle, items: bucket))
+            sections.append(GallerySection(id: key, title: currentTitle, ids: bucket))
             bucket = []
         }
 
-        for item in items {
-            let date: Date = item.creationDate
+        for id in ids {
+            let created: Date = date(id)
             let key: String
             let title: String
-            if date >= startOfToday {
+            if created >= startOfToday {
                 key = "today"
                 title = Brand.Copy.Gallery.today
-            } else if date >= startOfYesterday {
+            } else if created >= startOfYesterday {
                 key = "yesterday"
                 title = Brand.Copy.Gallery.yesterday
-            } else if date >= startOfWeek {
+            } else if created >= startOfWeek {
                 key = "week"
                 title = Brand.Copy.Gallery.thisWeek
             } else {
-                let components: DateComponents = calendar.dateComponents([.year, .month], from: date)
-                let year: Int = components.year ?? 0
-                let month: Int = components.month ?? 0
-                key = "m-" + String(year) + "-" + String(month)
-                if key == currentKey {
-                    title = currentTitle
-                } else if year == currentYear {
-                    title = date.formatted(.dateTime.month(.wide))
-                } else {
-                    title = date.formatted(.dateTime.month(.wide).year())
+                if monthInterval?.contains(created) != true {
+                    monthInterval = calendar.dateInterval(of: .month, for: created)
+                    let components: DateComponents = calendar.dateComponents([.year, .month], from: created)
+                    let year: Int = components.year ?? 0
+                    monthKey = "m-" + String(year) + "-" + String(components.month ?? 0)
+                    monthTitle = year == currentYear
+                        ? created.formatted(.dateTime.month(.wide))
+                        : created.formatted(.dateTime.month(.wide).year())
                 }
+                key = monthKey
+                title = monthTitle
             }
             if key != currentKey {
                 flush()
                 currentKey = key
                 currentTitle = title
             }
-            bucket.append(item)
+            bucket.append(id)
         }
         flush()
         return sections
@@ -897,6 +946,91 @@ final class GalleryVisibilityTracker {
 
 // MARK: - Cell
 
+/// One grid cell. Looks its screenshot up by id so analysis updates re-render only visible cells,
+/// not the whole gallery.
+private struct GalleryItem<Menu: View>: View {
+    let id: String
+    let tint: Color
+    let thumbnailPoints: CGFloat
+    let isSelecting: Bool
+    let isSelected: Bool
+    let namespace: Namespace.ID
+    let transition: AnyTransition
+    let onTap: (Screenshot) -> Void
+    let onAppear: () -> Void
+    @ViewBuilder let menu: (Screenshot) -> Menu
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let screenshot = model.library.screenshot(id: id) {
+            cell(screenshot)
+        } else {
+            // Removed a moment ago; keep the slot until the layout catches up
+            Color.clear.aspectRatio(GalleryMetrics.cellAspect, contentMode: .fit)
+        }
+    }
+
+    private func cell(_ screenshot: Screenshot) -> some View {
+        var label: String = Brand.Copy.Gallery.cellAccessibility(title: screenshot.title, date: screenshot.creationDate.formatted(GalleryMetrics.cellDateStyle))
+        if screenshot.tier == .none {
+            label += ". " + Brand.Copy.Gallery.notSortedYet
+        }
+        return GalleryCell(
+            screenshot: screenshot,
+            tint: tint,
+            thumbnailPoints: thumbnailPoints,
+            isSelecting: isSelecting,
+            isSelected: isSelected
+        )
+        .matchedTransitionSource(id: id, in: namespace)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap(screenshot) }
+        .contextMenu { menu(screenshot) }
+        .onAppear(perform: onAppear)
+        .transition(transition)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(isSelected ? Brand.Copy.Gallery.selected : "")
+        .accessibilityHint(isSelecting ? Brand.Copy.Gallery.selectHint : Brand.Copy.Gallery.openHint)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+        .accessibilityAction { onTap(screenshot) }
+    }
+}
+
+/// Header whose "still sorting" count follows analysis without re-rendering the grid around it.
+private struct GalleryLiveHeader: View {
+    let kind: CollectionKind
+    let ids: [String]
+    let title: String
+    let icon: String
+    let eyebrow: String
+    let tint: Color
+    let gradient: LinearGradient
+    let thisWeekCount: Int
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        GalleryHeader(
+            title: title,
+            icon: icon,
+            eyebrow: eyebrow,
+            tint: tint,
+            gradient: gradient,
+            count: ids.count,
+            unsortedCount: unsortedCount,
+            thisWeekCount: thisWeekCount
+        )
+    }
+
+    private var unsortedCount: Int {
+        let library: LibraryStore = model.library
+        if case .all = kind { return max(0, library.count - library.analyzedCount) }
+        return ids.reduce(0) { $0 + ((library.screenshot(id: $1)?.tier ?? .none) == .none ? 1 : 0) }
+    }
+}
+
 private struct GalleryCell: View {
     let screenshot: Screenshot
     let tint: Color
@@ -934,17 +1068,15 @@ private struct GalleryCell: View {
     }
 }
 
-/// Subtle sparkle on screenshots we haven't read yet.
+/// Subtle sparkle on screenshots we haven't read yet. Static on purpose: during a first sort every
+/// visible cell has one, and a repeating effect on each kept the whole grid re-rendering.
 private struct UnsortedBadge: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         Image(systemName: "sparkles")
             .font(.caption2.weight(.bold))
             .foregroundStyle(Palette.onBrand)
             .padding(Space.xxs + 1)
             .background(Circle().fill(Palette.brand.opacity(0.85)))
-            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
             .padding(Space.xxs + 2)
             .accessibilityHidden(true)
     }
@@ -1413,3 +1545,9 @@ private struct MoveToCategorySheet: View {
         .presentationDragIndicator(.visible)
     }
 }
+
+#if DEBUG
+private extension Double {
+    var nonZero: Double? { self == 0 ? nil : self }
+}
+#endif

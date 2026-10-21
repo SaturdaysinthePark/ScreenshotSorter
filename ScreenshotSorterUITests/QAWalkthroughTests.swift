@@ -236,7 +236,8 @@ final class QAWalkthroughTests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "All Screenshots")).firstMatch.tap()
         sleep(1)
         galleryCells.element(boundBy: 1).tap()
-        sleep(1)
+        let settle = UInt32(ProcessInfo.processInfo.environment["QA_SETTLE"] ?? "1") ?? 1
+        sleep(settle)
         func counter() -> String {
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " of ")).firstMatch.label
         }
@@ -529,5 +530,38 @@ final class QAWalkthroughTests: XCTestCase {
             app.swipeDown(velocity: .fast); usleep(250_000)
         }
         mark("scroll-end")
+    }
+
+    /// Grants photo access on a fresh install and exits (setup for scripted runs).
+    @MainActor
+    func test09GrantPhotoAccess() throws {
+        app.launch()
+        let allow = app.buttons["Allow Photo Access"]
+        if allow.waitForExistence(timeout: 8) {
+            allow.tap()
+            dismissSpringboardAlerts(firstWait: 10)
+        }
+    }
+
+    /// Row 9 far case: page well past the visible grid, close, and the zoom must land on the
+    /// current thumbnail (the gallery scrolls it on screen while paging).
+    @MainActor
+    func test10FarPagingDismiss() throws {
+        app.launch()
+        waitForHome()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "All Screenshots")).firstMatch.tap()
+        sleep(2)
+        galleryCells.element(boundBy: 1).tap()
+        sleep(2)
+        for _ in 0..<15 { app.swipeLeft(); usleep(500_000) }
+        let counter = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " of ")).firstMatch.label
+        print("QA-PAGE far \(counter)")
+        snap("10-far-paged")
+        mark("close")
+        app.buttons["Close"].firstMatch.tap()
+        usleep(200_000)
+        snap("10-far-closing")
+        sleep(2)
+        snap("10-far-closed")
     }
 }

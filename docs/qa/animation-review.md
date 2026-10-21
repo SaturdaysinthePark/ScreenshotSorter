@@ -35,6 +35,13 @@ Reduce Motion ran combined with dark + AX5 but only stills were reviewed, so mot
 Simulator note: Vision's classifier, face, barcode and feature-print requests have no inference
 context in the iOS 26 simulator; extraction now continues with OCR only (logged once per request type).
 
+### Measuring scroll smoothness
+Use `docs/qa/autoscroll.sh <udid>` (Debug-only `-QAOpenGallery` / `-QAAutoScroll` flags script the
+scrolling inside the app). Don't judge smoothness from XCUITest swipes: the runner's work between
+gestures showed up as 7–10% dropped frames, while scripted scrolling on the same 2,000-screenshot
+library measured 0–0.2% (worst 35–87 ms), including during a first sort. Simulator numbers are a
+floor check; confirm on a device with Instruments (Animation Hitches).
+
 ## Performance targets (device, 500+ screenshots, fresh install, plugged in)
 - Fast pass ≥ 15 screenshots/s; whole library categorized in < 1 min per 1,000.
 - Deep pass 3–6/s (without language model); language model 0.5–1/s.
