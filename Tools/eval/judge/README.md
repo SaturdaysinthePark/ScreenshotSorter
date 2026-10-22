@@ -76,6 +76,10 @@ Judge precision of the top 12 per name, the way a New Collection fills itself (`
 | Phone's labels before this pass | 0.72 | 0.58 | 0.582 | 75 |
 | Same stored features, current rules | 0.81 | 0.69 | 0.638 | 99 |
 
+On the 1024 px previews end to end (Mac, model text-only): rules 0.621 → with the model 0.654 macro-F1. The model's
+topic was right 72% of the time on real posts, at p50 1.6 s. On iOS 27 it also sees the image, which is not
+measurable on a Mac.
+
 Collections, right in the top 12, before → after: cars 3 → 6, japan trip 6 → 10; matcha 12, coffee 11,
 watches 12, anime 10.
 
