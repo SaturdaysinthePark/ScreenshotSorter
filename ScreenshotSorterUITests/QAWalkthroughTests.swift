@@ -120,14 +120,14 @@ final class QAWalkthroughTests: XCTestCase {
         snap("04-home")
         print(app.debugDescription.prefix(6000))
 
-        // Row 6: shelf scroll (first horizontal card row below "All Screenshots")
+        // Row 6: collection grid scroll (tiles below "All Screenshots")
         let cards = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND NOT (label BEGINSWITH %@)", "screenshot", "All Screenshots"))
         if cards.count > 0 {
             let card = cards.element(boundBy: 0)
-            mark("shelf-scroll")
-            card.swipeLeft(velocity: .slow)
+            mark("grid-scroll")
+            card.swipeUp(velocity: .slow)
             usleep(400_000)
-            snap("06-shelf-scrolled")
+            snap("06-grid-scrolled")
             card.swipeRight(velocity: .slow)
             usleep(400_000)
 
@@ -394,7 +394,7 @@ final class QAWalkthroughTests: XCTestCase {
 
         // Row 16/17: review deck
         mark("review")
-        let review = app.buttons["Start swiping"].firstMatch
+        let review = app.buttons["Review"].firstMatch
         if review.waitForExistence(timeout: 2) {
             review.tap()
             sleep(2)

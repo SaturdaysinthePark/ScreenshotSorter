@@ -14,7 +14,7 @@ frame-by-frame, then repeat in **dark mode**, **Reduce Motion**, **largest Dynam
 | 3 | Onboarding pages 1–3 | Pile → stacks demo, flingable card, no clipped glass | ✅ | ✅ | — | ✅ | ✅ | Fixed (AX5): demo took the screen and titles started below the fold; demo now shrinks at accessibility sizes, wordmark capped. |
 | 4 | Home: analysis card appears/disappears | Slides from top, collapses smoothly when idle | ✅ | ✅ | — | ✅ | ✅ | Fixed (AX5): text wrapped mid-word beside icon + pause button; stacks vertically at accessibility sizes. |
 | 5 | Home: stats counters while sorting | numericText transitions, no layout jumps | ✅ | ✅ | — | ✅ | ✅ | |
-| 6 | Home: shelf horizontal scroll | scrollTransition scale/opacity, 120Hz, snapping | ✅ | ✅ | — | ✅ | ✅ | |
+| 6 | Home: collection grid scroll, "Show all" | 120Hz, covers load without pop-in; Show all expands in place | — | — | — | — | — | Redesigned Oct 2026 (two-column grid); re-walk on device |
 | 7 | Category card → gallery | Zoom transition from card, back gesture zooms home | ✅ | ✅ | — | ✅ | ✅ | |
 | 8 | Gallery: items arrive while analyzing | Gentle insertions, no scroll jump | ✅ | — | — | — | ✅ | Checked with 50 screenshots arriving; no scroll jumps seen. |
 | 9 | Gallery thumbnail → detail | Zoom from thumbnail; after paging, dismiss returns to current thumbnail | ✅ | ✅ | — | — | ✅ | Fixed: pager could not page at all (zero frames recorded during swipes). The dismiss DragGesture claimed every pan; now a UIKit pan that only begins for vertical drags. |
@@ -26,7 +26,7 @@ frame-by-frame, then repeat in **dark mode**, **Reduce Motion**, **largest Dynam
 | 15 | Search result → detail | Zoom from row thumbnail | ✅ | ✅ | — | ✅ | — | |
 | 16 | Review deck fling / undo / sort-into | Velocity-aware, stack promotes, threshold haptic once | ✅ | ✅ | — | ⚠️ | ✅ | AX5: "Start swiping" banner is below the fold on home; reachable by scrolling. |
 | 17 | Review completion | Confetti, count-up, space freed figure | ✅ | — | — | — | ✅ | Only "kept everything" path exercised (no tosses → no space-freed figure). |
-| 18 | Smart suggestion Keep / dismiss | Card animates into "Your collections" shelf | — | — | — | — | — | Not exercised: suggestions need ≥8 similar items; seed library too small. |
+| 18 | Smart suggestion Keep / dismiss | Card animates into the collection grid | — | — | — | — | — | Not exercised: suggestions need ≥8 similar items; seed library too small. |
 | 19 | Pause / resume sorting | Symbol replace transition, progress freezes/resumes | ✅ | ✅ | — | ✅ | — | |
 
 Last run: 2026-10-20, iPhone 17 Pro + iPad Pro 11" (M5) simulators, iOS 26, 50 seeded screenshots,
