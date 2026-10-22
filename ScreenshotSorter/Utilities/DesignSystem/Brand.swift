@@ -33,8 +33,9 @@ enum Brand {
         /// The system's progress UI (Live Activity) while sorting continues in the background
         enum Background {
             static let sortingTitle: String = "Sorting screenshots"
+            static func progress(percent: Int, left: Int) -> String { "\(percent)% · \(left.formatted()) left" }
             static let doneTitle: String = "Screenshots sorted"
-            static let doneSubtitle: String = "All done"
+            static let doneSubtitle: String = "Finishing touches happen in the app"
         }
 
         enum Access {

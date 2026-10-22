@@ -39,13 +39,13 @@ enum BackgroundAnalysisManager {
     }
 
     /// Call right after the tap that started a big job, while the app is in the foreground. `remaining` is screenshots
-    /// still to sort; the subtitle stays as submitted (the progress ring shows how far it got).
+    /// still waiting for their first sort (the fast pass).
     static func submitContinuedIfNeeded(remaining: Int) {
         guard remaining >= continuedThreshold else { return }
         let request = BGContinuedProcessingTaskRequest(
             identifier: continuedIdentifier,
             title: Brand.Copy.Background.sortingTitle,
-            subtitle: Brand.screenshots(remaining)
+            subtitle: Brand.Copy.Background.progress(percent: 0, left: remaining)
         )
         request.strategy = .queue
         do {
@@ -67,10 +67,9 @@ enum BackgroundAnalysisManager {
         }
     }
 
-    /// Sorting only: the fast and deep passes, counted in passes so every finished one moves the ring (counting
-    /// screenshots left made it sit still while each one moved from the fast queue to the deep one, and iOS expired
-    /// the "stuck" task). The language model isn't counted: iOS 27 limits background Neural Engine use, and it
-    /// finishes overnight. Nor is the deep pass when Low Power Mode defers it.
+    /// The first sort only (the fast pass: every screenshot gets its collections, ~2 a second). iOS shows this task
+    /// as a banner apps can't shrink, so it should end soon: the slower deep pass (accurate text) and the language
+    /// model carry on in the app and overnight. The subtitle follows the percentage, so it changes at most 100 times.
     private static func handleContinued(_ task: BGContinuedProcessingTask) {
         // Read by the expiration handler, which can't await the scheduler
         let state = OSAllocatedUnfairLock(initialState: false)
@@ -84,22 +83,24 @@ enum BackgroundAnalysisManager {
                 if claimCompletion() { task.setTaskCompleted(success: false) }
                 return
             }
-            func passesLeft() async -> Int {
-                let progress = await scheduler.currentProgress()
-                let deepRuns = ResourceGovernor.budget(inBackground: true).deepConcurrency > 0
-                return deepRuns ? progress.fastRemaining * 2 + progress.deepRemaining : progress.fastRemaining
-            }
-            var total = max(1, await passesLeft())
+            var total = max(1, await scheduler.currentProgress().fastRemaining)
             var completed = 0
+            var shownPercent = -1
             task.progress.totalUnitCount = Int64(total)
             while !Task.isCancelled {
-                let left = await passesLeft()
+                let left = await scheduler.currentProgress().fastRemaining
                 if left == 0 { break }
                 // New screenshots arrived: the job grows, what's done stays done
                 if left > total - completed { total = completed + left }
                 completed = max(completed, total - left)
                 task.progress.totalUnitCount = Int64(total)
                 task.progress.completedUnitCount = Int64(completed)
+                let percent = completed * 100 / total
+                if percent != shownPercent {
+                    shownPercent = percent
+                    task.updateTitle(Brand.Copy.Background.sortingTitle,
+                                     subtitle: Brand.Copy.Background.progress(percent: percent, left: left))
+                }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
             guard !Task.isCancelled, claimCompletion() else { return }
@@ -111,8 +112,8 @@ enum BackgroundAnalysisManager {
         task.expirationHandler = {
             work.cancel()
             scheduleOvernight()
-            // Cancelled from the Live Activity, or iOS needed the resources: what's sorted is saved, the rest
-            // continues next launch or overnight
+            // Cancelled from the banner, or iOS needed the resources: what's sorted is saved, the rest continues next
+            // launch or overnight. iOS shows "Task failed" here whatever the app says.
             if claimCompletion() { task.setTaskCompleted(success: false) }
         }
     }

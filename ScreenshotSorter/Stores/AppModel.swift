@@ -197,10 +197,10 @@ final class AppModel {
         }
     }
 
-    /// After a tap that starts a big sort, let it keep going with a system progress UI if the user leaves the app
+    /// After a tap that starts a big sort, let the first sort keep going with a system progress UI if the user
+    /// leaves the app (the deep pass and model don't get one: see `BackgroundAnalysisManager.handleContinued`)
     private func submitSortingTask() async {
-        let progress = await scheduler.currentProgress()
-        BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: progress.fastRemaining + progress.deepRemaining)
+        BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: await scheduler.currentProgress().fastRemaining)
     }
 
     private func loadLibrary() async {
