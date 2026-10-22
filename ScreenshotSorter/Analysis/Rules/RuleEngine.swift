@@ -29,8 +29,10 @@ enum RulePattern: Sendable {
 
 /// Layout cues that keywords can't express, read once per screenshot from the raw OCR lines.
 struct LayoutSignals: Sendable {
-    /// Lines of ≥3 words written in capitals (meme captions)
+    /// Lines of ≥3 words written in capitals with no prices, codes or links (meme captions)
     var capsCaptionLines = 0
+    /// A price anywhere on screen ("$150", "¥98,000"): ad banners and shop pages shout in capitals too
+    var hasPrice = false
     /// Vertical distance between the highest and lowest caps line (top + bottom captions, not a sign)
     var capsCaptionSpread = 0.0
     var lineCount = 0
@@ -43,6 +45,10 @@ struct LayoutSignals: Sendable {
     /// "Monday, October 20" on its own line near the top (lock screen)
     var hasLockScreenDate = false
 
+    /// Not caption text: prices, percentages, handles, links and multi-digit numbers ("30-DAY RETURNS", "USE CODE 150")
+    private static let notCaption = try! NSRegularExpression(
+        pattern: #"[$€£¥₩%@]|\d{2}|\w\.(com|co|net|org|io|shop|store)\b"#, options: [.caseInsensitive])
+    private static let price = try! NSRegularExpression(pattern: #"[$€£¥₩]\s?\d|\d\s?[$€£¥₩]"#)
     private static let timeRange = try! NSRegularExpression(
         pattern: #"\b\d{1,2}(:\d{2})?\s*(am|pm)?\s*[–—-]\s*\d{1,2}(:\d{2})?\s*(am|pm)\b"#, options: [.caseInsensitive])
     private static let relative = try! NSRegularExpression(
@@ -62,7 +68,9 @@ struct LayoutSignals: Sendable {
             let text = line.text.trimmingCharacters(in: .whitespaces)
             let range = NSRange(text.startIndex..., in: text)
             let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
-            if letters.count >= 8, text.split(separator: " ").count >= 3 {
+            if LayoutSignals.price.firstMatch(in: text, options: [], range: range) != nil { hasPrice = true }
+            if letters.count >= 8, text.split(separator: " ").count >= 3,
+               LayoutSignals.notCaption.firstMatch(in: text, options: [], range: range) == nil {
                 let upper = letters.filter { CharacterSet.uppercaseLetters.contains($0) }.count
                 if Double(upper) / Double(letters.count) > 0.85 {
                     capsCaptionLines += 1
@@ -143,8 +151,9 @@ struct RuleEngine: Sendable {
         self.rules = rules.map { rule in
             CompiledRule(
                 category: rule.category,
-                strong: rule.strong.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) },
-                weak: rule.weak.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) },
+                // Strongest first, so a word listed twice ("check in" / "check-in", "sofa" strong and weak) counts once at its best weight
+                strong: rule.strong.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) }.sorted { $0.1 > $1.1 },
+                weak: rule.weak.map { (MatchTerm(TextNormalizer.normalizeTerm($0.key)), $0.value) }.sorted { $0.1 > $1.1 },
                 patterns: rule.patterns.map { CompiledPattern($0) },
                 negative: rule.negative.map { TextNormalizer.normalizeTerm($0) },
                 minEvidence: rule.minEvidence,
@@ -181,8 +190,10 @@ struct RuleEngine: Sendable {
         for rule in rules {
             var weights: [Double] = []
             var matched: [String] = []
+            // "drink" and "drinks", "shoe" and "shoes" are one piece of evidence
+            var stems: Set<String> = []
 
-            for (term, weight) in rule.strong where text.contains(term) {
+            for (term, weight) in rule.strong where text.contains(term) && stems.insert(term.stem).inserted {
                 weights.append(weight)
                 matched.append(term.text)
             }
@@ -196,7 +207,7 @@ struct RuleEngine: Sendable {
 
             var weakWeights: [Double] = []
             var weakMatched: [String] = []
-            for (term, weight) in rule.weak where text.contains(term) {
+            for (term, weight) in rule.weak where text.contains(term) && stems.insert(term.stem).inserted {
                 weakWeights.append(weight)
                 weakMatched.append(term.text)
             }
@@ -256,8 +267,9 @@ struct RuleEngine: Sendable {
         case .lineCount(let minimum, let weight):
             return text.lineCount >= minimum ? weight : nil
         case .capsCaption(let minLines, let weight):
-            // Few lines overall: a feed or article full of headings is not a meme
-            return layout.capsCaptionLines >= minLines && layout.lineCount <= 16 && layout.capsCaptionSpread >= 0.25 ? weight : nil
+            // Few lines overall: a feed, menu or article full of headings is not a meme, nor is anything with a price
+            return layout.capsCaptionLines >= minLines && layout.lineCount <= 10 && !layout.hasPrice
+                && layout.capsCaptionSpread >= 0.25 ? weight : nil
         case .quoteAttribution(let weight):
             return layout.hasQuoteAttribution && layout.lineCount <= 14 ? weight : nil
         case .timeRangeCount(let minimum, let weight):

@@ -84,8 +84,15 @@ final class AppModel {
     private(set) var isLibraryLoaded = false
     private(set) var progress = AnalysisProgress()
     var collectionsSort: CollectionsSortOption = CollectionsSortOption(rawValue: UserDefaults.standard.string(forKey: AppModel.sortKey) ?? "") ?? .imageCount {
-        didSet { UserDefaults.standard.set(collectionsSort.rawValue, forKey: AppModel.sortKey) }
+        didSet {
+            UserDefaults.standard.set(collectionsSort.rawValue, forKey: AppModel.sortKey)
+            refreshShelfRanking()
+        }
     }
+    /// Order of home shelves and their category cards. Counts change with every sorted batch, so the order
+    /// is frozen while sorting runs (shelves jumping up and down is disorienting) and refreshed at launch,
+    /// when sorting finishes and when the sort option changes. New categories join the end of their shelf.
+    private(set) var shelfRanking = ShelfRanking()
     private(set) var reviewBannerDismissedAt: Date? = UserDefaults.standard.object(forKey: AppModel.reviewDismissedKey) as? Date
     var propagationSuggestion: PropagationSuggestion?
     /// Undone correction groups, so a suggestion still being computed for one never appears.
@@ -184,6 +191,7 @@ final class AppModel {
         library.reset(assets: assets, summaries: summaries)
         library.loadEntityTypes(await store.entityTypeMap())
         syncReviewedFromDefaults()
+        refreshShelfRanking()
         isLibraryLoaded = true
         startObserver()
         await reconcile(assets: assets)
@@ -248,6 +256,10 @@ final class AppModel {
         }
     }
 
+    func refreshShelfRanking() {
+        shelfRanking = ShelfRanking(library.categoryCollections(sort: collectionsSort))
+    }
+
     // MARK: - Event streams
 
     private func listenToScheduler() {
@@ -266,8 +278,10 @@ final class AppModel {
                     self.maybeRefreshSmartCollections()
                     if self.isSearchActive { self.scheduleSearch(debounce: 0.8) }
                 case .progress(let progress):
+                    let finished = progress.isIdle && !self.progress.isIdle
                     self.progress = progress
                     if progress.isIdle { self.maybeRefreshSmartCollections(force: true) }
+                    if finished { self.refreshShelfRanking() }
                 }
             }
         })

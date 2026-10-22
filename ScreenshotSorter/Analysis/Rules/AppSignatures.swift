@@ -152,7 +152,8 @@ enum AppSignatures {
     ]
 
     static let utility: [AppSignature] = [
-        AppSignature(appID: "maps", displayName: "Maps", category: .directions,
+        // Most Maps screenshots are place cards (a restaurant, a shop); routes are recognised by the directions rules
+        AppSignature(appID: "maps", displayName: "Maps", category: .places,
                      names: ["google maps"],
                      phrases: ["directions": 0.3, "start": 0.05, "go": 0.02],
                      chrome: [.allOf(["directions", "min"], weight: 0.5)]),

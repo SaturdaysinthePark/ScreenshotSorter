@@ -70,7 +70,17 @@ struct FusionConfig: Sendable {
     var perCategoryThreshold: [ScreenshotCategory: Double] = [:]
     var maxCategories: Int = 6
     /// When nothing passes the threshold, keep the best category if it is at least this likely
+    /// (agreeing sources) or `singleSourceFallbackMinimum` (one source). The language model alone never
+    /// labels: on a real library its lone guesses were mostly wrong.
     var fallbackMinimum: Double = 0.3
+    var singleSourceFallbackMinimum: Double = 0.35
+    /// A second, object-type topic seen only by the image classifier needs more than the threshold: clothes,
+    /// furniture or art at ~0.52 next to a selfie were wrong far more often than right on a real library.
+    /// Scene labels (beaches + nature) still pair freely.
+    var visionOnlySecondaryThreshold: Double = 0.6
+    /// "People" without a detected face (someone in a TikTok video, an ad model, diners behind a restaurant card)
+    /// needs this much when it is not the screenshot's only subject: as a second topic or inside an app.
+    var visionOnlyPeopleThreshold: Double = 0.75
     /// Reliability of neighbour-propagated user corrections
     var knnReliability: Double = 0.9
     /// How strongly negative neighbour evidence suppresses a category
@@ -179,11 +189,24 @@ enum SignalFusion {
 
         scored.sort { $0.score > $1.score }
         var selected = scored.filter { $0.score >= config.threshold(for: $0.category) || $0.sources.contains(.user) }
+        if let firstTopic = selected.firstIndex(where: { $0.category.kind != .app }) {
+            let inApp = selected.contains { $0.category.kind == .app }
+            selected = selected.enumerated().filter { index, item in
+                guard item.sources == .visionClassifier else { return true }
+                if item.category == .people {
+                    return (index == firstTopic && !inApp) || item.score >= config.visionOnlyPeopleThreshold
+                }
+                return index <= firstTopic || item.category.kind != .mixed || item.score >= config.visionOnlySecondaryThreshold
+            }.map(\.element)
+        }
         if selected.count > config.maxCategories {
             selected = Array(selected.prefix(config.maxCategories))
         }
         if selected.isEmpty {
-            if let best = scored.first, best.score >= config.fallbackMinimum {
+            let singleSource = scored.first.map { [LabelSource.visionClassifier, .ocrRules, .appDetector, .barcode, .faces]
+                .filter($0.sources.contains).count <= 1 } ?? true
+            if let best = scored.first, best.sources != .foundationModel,
+               best.score >= (singleSource ? config.singleSourceFallbackMinimum : config.fallbackMinimum) {
                 selected = [best]
             } else {
                 let bestScore = scored.first?.score ?? 0

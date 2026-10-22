@@ -9,7 +9,7 @@ enum VisionLabelMap {
     /// Classifier observations below this confidence are ignored entirely
     static let minimumConfidence = 0.12
     /// Unmapped labels at or above this confidence become free-form tags
-    static let tagConfidence = 0.3
+    static let tagConfidence = 0.5
 
     private static let table: [(ScreenshotCategory, Double, [String])] = [
         (.animals, 1.0, ["animal", "mammal", "canine", "dog", "puppy", "cat", "feline", "kitten", "bird", "pet",
@@ -65,7 +65,8 @@ enum VisionLabelMap {
         (.art, 0.85, ["art", "painting", "drawing", "sketch", "illustration", "sculpture", "mural", "graffiti",
                       "artwork", "canvas", "watercolor"]),
         (.books, 0.7, ["book", "books", "bookshelf", "novel", "magazine", "library"]),
-        (.documents, 0.55, ["document", "paper", "letter", "form", "receipt", "invoice"]),
+        // Not "document": Vision says it about nearly every screenshot (0.8–0.9 on chats, maps, feeds)
+        (.documents, 0.55, ["page", "paper", "letter", "form", "receipt", "invoice"]),
         (.receipts, 0.7, ["receipt", "invoice"]),
         (.codes, 0.8, ["qrcode", "barcode"]),
         (.sports, 0.85, ["sport", "sports", "soccer", "football", "basketball", "baseball", "tennis", "golf",
@@ -92,7 +93,13 @@ enum VisionLabelMap {
     static let genericLabels: Set<String> = [
         "structure", "material", "textile", "outdoor", "indoor", "people", "adult", "sky", "wood", "plant",
         "document", "text", "screenshot", "graphic", "art", "machine", "liquid", "water", "cloud", "clouds",
-        "land", "conveyance", "consumer electronics", "electronics", "display", "screen", "light"
+        "land", "conveyance", "consumer electronics", "electronics", "display", "screen", "light",
+        // Seen behind or around almost anything on a real library; they describe the frame, not the subject
+        "wood processed", "sign", "portal", "printed page", "illustrations", "window", "container", "decoration",
+        "raw glass", "brick", "fence", "blue sky", "cloudy", "interior room", "utensil", "tableware", "table",
+        "optical equipment", "headgear", "crowd", "building", "foliage", "decorative plant", "vehicle", "automobile",
+        // Duplicates of a clearer label ("watch", "shoes")
+        "timepiece", "dial", "footwear"
     ]
 
     static func tokens(of identifier: String) -> [String] {
@@ -155,9 +162,10 @@ enum VisionLabelMap {
     }
 
     /// Human-readable tags from confident, specific labels ("golden_retriever" → "golden retriever").
-    static func tags(for labels: [VisionLabel], limit: Int = 5) -> [(String, Double)] {
+    /// `scale` < 1 on text-heavy screens, where pictures are thumbnails inside a feed or article
+    static func tags(for labels: [VisionLabel], scale: Double = 1, limit: Int = 4) -> [(String, Double)] {
         labels
-            .filter { $0.confidence >= tagConfidence }
+            .filter { $0.confidence * scale >= tagConfidence }
             .map { (tokens(of: $0.identifier).joined(separator: " "), $0.confidence) }
             .filter { !$0.0.isEmpty && !genericLabels.contains($0.0) }
             .prefix(limit)

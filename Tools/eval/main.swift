@@ -25,6 +25,9 @@ struct Args {
     var passes: [Pass] = [.fast, .deep]
     var export: URL?
     var filter: String?
+    /// Re-score a copy of a library database instead of running images (see rescore.swift)
+    var database: String?
+    var out: URL?
     var concurrency = max(2, ProcessInfo.processInfo.activeProcessorCount - 2)
 
     init() {
@@ -40,6 +43,8 @@ struct Args {
                 }
             case "--export": export = URL(fileURLWithPath: it.next()!)
             case "--filter": filter = it.next()
+            case "--db": database = it.next()
+            case "--out": out = URL(fileURLWithPath: it.next()!)
             case "--jobs": concurrency = Int(it.next()!) ?? concurrency
             default: fatalError("unknown argument \(arg)")
             }
@@ -207,6 +212,10 @@ func exportGolden(_ items: [(ManifestEntry, ExtractedFeatures)], to url: URL) th
 struct EvalMain {
     static func main() async throws {
         let args = Args()
+        if let database = args.database {
+            try runRescore(database: database, out: args.out ?? URL(fileURLWithPath: "build/eval/rescore.jsonl"))
+            return
+        }
         let manifestURL = args.corpus.appendingPathComponent("manifest.json")
         var entries = try JSONDecoder().decode([ManifestEntry].self, from: Data(contentsOf: manifestURL))
         if let filter = args.filter { entries = entries.filter { $0.file.contains(filter) || $0.expect.contains(filter) } }

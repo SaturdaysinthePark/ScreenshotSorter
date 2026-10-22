@@ -219,22 +219,12 @@ struct CollectionsView: View {
     private struct Shelf {
         let group: CategoryGroup
         let collections: [ScreenshotCollection]
-        let total: Int
     }
 
+    /// In `model.shelfRanking` order, which stays put while sorting runs
     private var groupedShelves: [Shelf] {
-        let collections = model.library.categoryCollections(sort: model.collectionsSort)
-        var byGroup: [CategoryGroup: [ScreenshotCollection]] = [:]
-        for collection in collections {
-            byGroup[collection.category.group, default: []].append(collection)
-        }
-        let shelves = byGroup.map { group, items in
-            Shelf(group: group, collections: items, total: items.reduce(0) { $0 + $1.count })
-        }
-        return shelves.sorted { lhs, rhs in
-            if lhs.group == .other { return false }
-            if rhs.group == .other { return true }
-            return lhs.total > rhs.total
+        model.shelfRanking.shelves(model.library.categoryCollections(sort: model.collectionsSort)).map { shelf in
+            Shelf(group: shelf.group, collections: shelf.collections)
         }
     }
 

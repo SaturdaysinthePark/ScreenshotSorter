@@ -160,7 +160,11 @@ enum TextNormalizer {
     }
 
     /// Very light English stemmer: enough to match plurals and simple verb forms.
+    /// Words that are not plurals: "news" must not match "new" (every "New York" screen read as news)
+    static let unstemmed: Set<String> = ["news", "series", "species", "physics", "politics", "economics", "always"]
+
     static func stem(_ token: String) -> String {
+        if unstemmed.contains(token) { return token }
         guard token.count > 4 else {
             if token.count > 3 && token.hasSuffix("s") && !token.hasSuffix("ss") {
                 return String(token.dropLast())

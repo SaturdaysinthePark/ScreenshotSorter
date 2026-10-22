@@ -92,3 +92,49 @@ enum CollectionsSortOption: String, CaseIterable {
     case alphabetical = "A–Z"
     case mostRecent = "Recently Added"
 }
+
+/// A frozen order for home shelves (category groups) and the category cards inside them.
+struct ShelfRanking: Equatable {
+    private var groups: [CategoryGroup: Int] = [:]
+    private var categories: [ScreenshotCategory: Int] = [:]
+
+    init() {}
+
+    /// `collections` in the order they should appear inside their shelves; shelves rank by total size, "Other" last.
+    init(_ collections: [ScreenshotCollection]) {
+        var totals: [CategoryGroup: Int] = [:]
+        for (index, collection) in collections.enumerated() {
+            categories[collection.category] = index
+            totals[collection.category.group, default: 0] += collection.count
+        }
+        let ordered = totals.keys.sorted { lhs, rhs in
+            if (lhs == .other) != (rhs == .other) { return rhs == .other }
+            return totals[lhs]! == totals[rhs]! ? lhs.rawValue < rhs.rawValue : totals[lhs]! > totals[rhs]!
+        }
+        for (index, group) in ordered.enumerated() { groups[group] = index }
+    }
+
+    /// Groups `collections` into shelves in the frozen order. Groups and categories that appeared since the
+    /// ranking was taken go after the known ones, keeping their incoming order.
+    func shelves(_ collections: [ScreenshotCollection]) -> [(group: CategoryGroup, collections: [ScreenshotCollection])] {
+        var byGroup: [CategoryGroup: [(offset: Int, element: ScreenshotCollection)]] = [:]
+        for item in collections.enumerated() {
+            byGroup[item.element.category.group, default: []].append(item)
+        }
+        func rank(_ category: ScreenshotCategory) -> Int { categories[category] ?? Int.max }
+        let firstSeen = Dictionary(uniqueKeysWithValues: byGroup.map { ($0.key, $0.value.map(\.offset).min() ?? 0) })
+        return byGroup.keys
+            .sorted { lhs, rhs in
+                if (lhs == .other) != (rhs == .other) { return rhs == .other }
+                let l = groups[lhs] ?? Int.max, r = groups[rhs] ?? Int.max
+                return l == r ? firstSeen[lhs]! < firstSeen[rhs]! : l < r
+            }
+            .map { group in
+                let items = byGroup[group]!.sorted { lhs, rhs in
+                    let l = rank(lhs.element.category), r = rank(rhs.element.category)
+                    return l == r ? lhs.offset < rhs.offset : l < r
+                }
+                return (group, items.map(\.element))
+            }
+    }
+}

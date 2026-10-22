@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Builds the macOS eval harness from the app's own analysis sources and runs it.
 #   Tools/eval/run.sh --corpus build/corpus [--pass fast|deep|both] [--export out.json] [--filter receipts]
+#   Tools/eval/run.sh --db snap.sqlite [--out rescore.jsonl]   # re-score a real library's stored features
 set -euo pipefail
 root=${0:A:h:h:h}
 app=$root/ScreenshotSorter
@@ -17,6 +18,7 @@ sources=(
   $app/Analysis/Fusion/SignalFusion.swift
   $app/Analysis/Rules/*.swift
   $root/Tools/eval/main.swift
+  $root/Tools/eval/rescore.swift
 )
 newest=$(ls -t $sources | head -1)
 if [[ ! -x $out/screenshot-eval || $newest -nt $out/screenshot-eval ]]; then

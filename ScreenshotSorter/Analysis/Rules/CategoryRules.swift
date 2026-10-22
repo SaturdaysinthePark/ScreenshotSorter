@@ -61,7 +61,8 @@ enum CategoryRules {
                      "sales tax": 0.75, "change due": 0.85, "cash": 0.2],
             weak: ["total": 0.3, "tax": 0.3, "paid": 0.25, "visa": 0.2, "mastercard": 0.2,
                    "amex": 0.2, "qty": 0.3, "item": 0.15, "balance": 0.15],
-            patterns: [.priceCount(min: 4, weight: 0.5), .allOf(["subtotal", "total"], weight: 0.6)],
+            // A page of prices is as often a shop's catalogue as a bill: it only adds to other receipt cues
+            patterns: [.priceCount(min: 4, weight: 0.3), .allOf(["subtotal", "total"], weight: 0.6)],
             negative: ["add to cart", "add to bag", "buy now"]
         ),
         CategoryRule(
@@ -202,12 +203,13 @@ enum CategoryRules {
     static let travel: [CategoryRule] = [
         CategoryRule(
             category: .flights,
-            strong: ["boarding pass": 0.6, "flight": 0.5, "departure": 0.5, "arrival": 0.4, "terminal": 0.3,
+            strong: ["boarding pass": 0.6, "flight": 0.5, "departure": 0.5, "terminal": 0.3,
                      "confirmation code": 0.55, "check in": 0.3, "layover": 0.85, "nonstop": 0.75,
                      "itinerary": 0.6, "airbnb": 0.7, "booking.com": 0.75, "expedia": 0.75, "hotel": 0.4,
-                     "check-in": 0.35, "reservation": 0.35, "baggage": 0.7, "carry-on": 0.7, "delta": 0.3,
+                     "check-in": 0.35, "baggage": 0.7, "carry-on": 0.7, "delta": 0.3,
                      "united": 0.15, "american airlines": 0.85, "southwest": 0.5, "jetblue": 0.85],
-            weak: ["gate": 0.25, "seat": 0.15, "airport": 0.35, "trip": 0.2, "travel": 0.2, "passenger": 0.4,
+            // "a recent arrival", "your reservation at CUT": shops and restaurants use these too
+            weak: ["arrival": 0.3, "reservation": 0.3, "gate": 0.25, "seat": 0.15, "airport": 0.35, "trip": 0.2, "travel": 0.2, "passenger": 0.4,
                    "depart": 0.3, "arrive": 0.2, "nights": 0.2, "guests": 0.2]
         ),
         CategoryRule(
@@ -215,19 +217,22 @@ enum CategoryRules {
             // "Directions" alone is also a button on every place card
             strong: ["directions": 0.4, "turn left": 0.85, "turn right": 0.85, "continue straight": 0.85, "add stop": 0.8,
                      "fastest route": 0.85, "arrival time": 0.5, "eta": 0.5, "min drive": 0.8, "min walk": 0.7,
-                     "get directions": 0.8, "google maps": 0.6, "route": 0.35, "transit": 0.4, "miles": 0.15],
+                     "get directions": 0.8, "route": 0.35, "transit": 0.4, "miles": 0.15, "your location": 0.6,
+                     "avoid tolls": 0.7, "toll": 0.3, "steps": 0.15, "walk": 0.2],
             weak: ["mi": 0.2, "km": 0.2, "min": 0.1, "exit": 0.2, "head north": 0.5, "head south": 0.5,
                    "street": 0.1, "ave": 0.1, "st": 0.05]
         ),
         CategoryRule(
             category: .places,
             strong: ["open now": 0.4, "closes": 0.35, "reviews": 0.15, "yelp": 0.7, "tripadvisor": 0.75,
-                     "google maps": 0.4, "save place": 0.7, "add to guide": 0.7, "neighborhood": 0.35],
+                     "google maps": 0.5, "save place": 0.7, "add to guide": 0.7, "neighborhood": 0.35],
             weak: ["address": 0.3, "located": 0.25, "visit": 0.2, "area": 0.1, "nearby": 0.3, "hours": 0.2,
                    "ratings": 0.2, "closed": 0.15, "website": 0.15],
             // Place cards (Maps, Google, Yelp): action buttons plus hours
             patterns: [.allOf(["open", "closes"], weight: 0.45), .allOf(["call", "website"], weight: 0.6),
-                       .allOf(["directions", "website"], weight: 0.55)]
+                       .allOf(["directions", "website"], weight: 0.55),
+                       // Google Maps' category chips over a map
+                       .allOf(["restaurants", "hotels"], weight: 0.6)]
         ),
         CategoryRule(
             category: .sitesOfInterest,
@@ -287,10 +292,11 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .food,
-            strong: ["doordash": 0.75, "uber eats": 0.75, "grubhub": 0.75, "menu": 0.4, "appetizers": 0.75,
+            strong: ["doordash": 0.75, "uber eats": 0.75, "grubhub": 0.75, "appetizers": 0.75,
                      "entrees": 0.75, "reservation": 0.2, "opentable": 0.75, "resy": 0.75, "brunch": 0.5,
                      "restaurant": 0.4],
-            weak: ["pizza": 0.3, "burger": 0.3, "sushi": 0.35, "tacos": 0.35, "salad": 0.25, "pasta": 0.3,
+            // "Menu" alone is a hamburger button on half the web
+            weak: ["menu": 0.35, "pizza": 0.3, "burger": 0.3, "sushi": 0.35, "tacos": 0.35, "salad": 0.25, "pasta": 0.3,
                    "chicken": 0.2, "dessert": 0.3, "breakfast": 0.25, "lunch": 0.25, "dinner": 0.25, "food": 0.25,
                    "delicious": 0.3, "yummy": 0.3]
         ),
@@ -314,8 +320,8 @@ enum CategoryRules {
             weak: ["news": 0.3, "according": 0.2, "said": 0.1, "officials": 0.3, "report": 0.2, "article": 0.3,
                    "published": 0.25, "government": 0.2, "president": 0.2],
             patterns: [.lineCount(min: 18, weight: 0.1)],
-            // Wikipedia's "Article | Talk" tabs are not journalism
-            negative: ["wikipedia"]
+            // Wikipedia's "Article | Talk" tabs are not journalism; "New York Times bestselling author" is a book cover
+            negative: ["wikipedia", "bestselling", "bestseller"]
         ),
         CategoryRule(
             category: .quotes,
@@ -512,7 +518,9 @@ enum CategoryRules {
             strong: ["reply all": 0.75, "unsubscribe": 0.55, "sent from my iphone": 0.85, "inbox": 0.5,
                      "forward": 0.15, "to me": 0.4, "cc": 0.2],
             weak: ["from": 0.1, "to": 0.02, "reply": 0.15, "sent": 0.15, "draft": 0.25, "archive": 0.2],
-            patterns: [.allOf(["from", "to", "subject"], weight: 0.7)]
+            patterns: [.allOf(["from", "to", "subject"], weight: 0.7)],
+            // TikTok's and Instagram's tab bars have an "Inbox" too
+            negative: ["for you", "following", "followers"]
         )
     ]
 }

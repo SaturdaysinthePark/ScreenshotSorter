@@ -260,8 +260,9 @@ struct AnalysisPipeline: AnalysisPasses {
         record.insight = insight
         record.categories = result.categories
         record.tags = result.tags
-        record.app = result.app?.displayName ?? insight?.app
-        record.appConfidence = result.app?.confidence ?? (insight?.app == nil ? 0 : 0.6)
+        let modelApp = ScreenshotClassifier.knownApp(insight?.app)
+        record.app = result.app?.displayName ?? modelApp
+        record.appConfidence = result.app?.confidence ?? (modelApp == nil ? 0 : 0.6)
         record.ocrText = features.fullText
         record.language = features.language
         record.title = insight?.title ?? AnalysisPipeline.fallbackTitle(features: features, app: record.app)

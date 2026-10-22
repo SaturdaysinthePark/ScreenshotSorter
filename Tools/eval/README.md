@@ -28,6 +28,20 @@ Tools/eval/run.sh --corpus build/corpus --filter web/   # only real captures
 python3 Tools/eval/failures.py build/corpus deep        # every miss with rule hits, Vision labels and OCR text
 ```
 
+## Re-score a real library
+
+Corpus images are clean; real libraries are full of feeds, ads and half-read OCR. Copy the app's database off a
+device (Xcode → Devices → download the container, `Library/Application Support/…/analysis.sqlite`) and re-run
+the current rules on its stored features — what the app does when `PipelineVersion.rules` changes:
+
+```
+Tools/eval/run.sh --db snap.sqlite --out build/eval/rescore.jsonl
+```
+
+It prints before/after counts per category and writes every screenshot's old and new labels (with sources:
+V vision, R rules, A app, F faces, M model…), tags, rule hits and OCR text. The file holds the owner's own text:
+keep it on that machine.
+
 ## Lock in improvements
 
 ```sh
