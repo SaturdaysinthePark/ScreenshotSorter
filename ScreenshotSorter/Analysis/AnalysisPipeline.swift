@@ -283,23 +283,8 @@ struct AnalysisPipeline: AnalysisPasses {
         record.appConfidence = result.app?.confidence ?? (modelApp == nil ? 0 : 0.6)
         record.ocrText = features.fullText
         record.language = features.language
-        record.title = insight?.title ?? AnalysisPipeline.fallbackTitle(features: features, app: record.app)
+        record.title = ScreenshotTitle.choose(model: insight?.title, features: features, app: record.app)
         record.summary = insight?.summary
     }
 
-    /// A readable title without the language model: app + first meaningful line.
-    static func fallbackTitle(features: ExtractedFeatures, app: String?) -> String? {
-        let candidate = features.lines
-            .filter { $0.zone == .body || $0.zone == .topBar }
-            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { line in
-                line.split(separator: " ").count >= 3 && line.count <= 90
-            }
-        switch (app, candidate) {
-        case let (app?, line?): return "\(app) · \(String(line.prefix(60)))"
-        case let (nil, line?): return String(line.prefix(70))
-        case let (app?, nil): return app
-        default: return nil
-        }
-    }
 }

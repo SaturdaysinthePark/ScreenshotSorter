@@ -1238,11 +1238,13 @@ private struct InsightDrawer: View {
     }
 
     private var quickAction: QuickAction? {
-        QuickAction.suggest(categories: displayCategories, entities: entities)
+        let lines: [String] = record?.features?.lines.map(\.text) ?? []
+        return QuickAction.suggest(categories: displayCategories, entities: entities,
+                                   placeName: PlaceCard.name(in: lines) ?? PlaceCard.taggedVenue(in: lines), text: ocrText)
     }
 
     private var detailEntities: [ExtractedEntity] {
-        QuickAction.details(categories: displayCategories, entities: entities, primary: quickAction)
+        QuickAction.details(categories: displayCategories, entities: entities, primary: quickAction, text: ocrText)
     }
 
     private func perform(_ action: QuickAction) {

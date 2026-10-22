@@ -16,6 +16,12 @@ sources=(
   $app/Analysis/EntityExtractor.swift
   $app/Analysis/ScreenshotClassifier.swift
   $app/Analysis/Text/TextNormalizer.swift
+  $app/Analysis/Text/PlaceCard.swift
+  $app/Analysis/Text/ScreenshotTitle.swift
+  $app/Models/QuickAction.swift
+  $app/Utilities/DesignSystem/Brand.swift
+  $app/Utilities/DesignSystem/Brand+Gallery.swift
+  $app/Utilities/DesignSystem/Brand+Home.swift
   $app/Analysis/Fusion/SignalFusion.swift
   $app/Analysis/Rules/*.swift
   $root/Tools/eval/main.swift

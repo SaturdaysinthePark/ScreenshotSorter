@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import ScreenshotSorter
@@ -27,6 +28,54 @@ struct QuickActionTests {
         let code = [entity(.oneTimeCode, "335543"), entity(.url, "bank.com")]
         let codeAction = QuickAction.suggest(categories: [.notifications], entities: code)
         #expect(QuickAction.details(categories: [.notifications], entities: code, primary: codeAction).map(\.type) == [.url])
+    }
+
+    @Test func aCityInACaptionIsNotAPlaceToOpen() {
+        let post = [entity(.place, "Tokyo")]
+        #expect(QuickAction.suggest(categories: [.tiktok, .flights], entities: post) == nil)
+        #expect(QuickAction.details(categories: [.tiktok, .flights], entities: post, primary: nil).isEmpty)
+        // A Maps card's name is
+        let card = QuickAction.suggest(categories: [.places], entities: [], placeName: "Pocketbook Hudson")
+        #expect(card?.title == Brand.Copy.Detail.openInMaps)
+        #expect(PlaceCard.name(in: ["11:07", "Pocketbook Hudson", "4.3", "★（60）・Hotel", "• 2 hr 15 min", "Directions"])
+            == "Pocketbook Hudson")
+        #expect(PlaceCard.name(in: ["Day 6: Tokyo", "Teamlab Planets", "Sushiro"]) == nil)
+    }
+
+    @Test func bookingCodesAndNoiseRows() {
+        #expect(QuickAction.bookingCodes(in: "JFK - GRU\nCONFIRMATION # |\nHLNTA5\nDELTA").map(\.value) == ["HLNTA5"])
+        #expect(QuickAction.bookingCodes(in: "we have generated a new\nreservation code.\nDQBMTH\nThe code").map(\.value) == ["DQBMTH"])
+        #expect(QuickAction.bookingCodes(in: "Your reservation was made by a partner. RESERVATION CONFIRMED").isEmpty)
+        let pass = QuickAction.suggest(categories: [.flights], entities: [], text: "CONFIRMATION # |\nHLNTA5")
+        #expect(pass?.kind == .copy("HLNTA5"))
+        // Guitar tabs, countdowns and opening hours aren't phones or dates
+        #expect(!QuickAction.looksLikePhone(entity(.phone, "0000000 000")))
+        #expect(!QuickAction.looksLikePhone(entity(.phone, "22-21-22-21-17")))
+        #expect(!QuickAction.isCalendarDate(entity(.date, "00:14:43")))
+        #expect(!QuickAction.isCalendarDate(entity(.date, "12:00 PM - 2:30 PM")))
+        #expect(QuickAction.isCalendarDate(entity(.date, "Apr 25 - 29")))
+        // A clipped link isn't opened; a lone shop link becomes the button
+        #expect(!QuickAction.isWorthOpening(entity(.url, "github.com/zilliztech/claude-")))
+        #expect(!QuickAction.isWorthOpening(entity(.url, "instagram.com")))
+        #expect(QuickAction.suggest(categories: [.instagram, .art], entities: [entity(.url, "ravizupa.com")])?.title
+            == Brand.Copy.Detail.openSite("ravizupa.com"))
+        #expect(PlaceCard.taggedVenue(in: ["KOFFEE MAMEYA Kakeru - Koto City", "1,329 people posted about this place"])
+            == "KOFFEE MAMEYA Kakeru, Koto City")
+        #expect(PlaceCard.taggedVenue(in: ["Manhattan", "350.2K people posted about this place"]) == nil)
+    }
+
+    @Test func titlesSkipChromeAndFragments() {
+        func line(_ text: String, _ y: Double, height: Double = 0.02) -> OCRLine {
+            OCRLine(text: text, confidence: 1, box: CGRect(x: 0.05, y: y, width: 0.6, height: height), zone: .body)
+        }
+        let post = [line("Following Shop For You", 0.06, height: 0.03), line("Day 6: Tokyo", 0.3, height: 0.05),
+                    line("Teamlab Planets", 0.4)]
+        #expect(ScreenshotTitle.headline(post) == "Day 6: Tokyo")
+        #expect(ScreenshotTitle.headline([line("Your confirmation ID is", 0.2, height: 0.05), line("Brooklyn Botanic Garden", 0.3)])
+            == "Brooklyn Botanic Garden")
+        let features = TestSupport.features(lines: [("Cartier London Lozenge", .body)])
+        #expect(ScreenshotTitle.choose(model: "Instagram", features: features, app: "Instagram") == "Cartier London Lozenge")
+        #expect(ScreenshotTitle.choose(model: "Koffee Mameya Kakeru", features: features, app: "TikTok") == "Koffee Mameya Kakeru")
     }
 
     @Test func oneTimeCodeWinsEverywhere() {

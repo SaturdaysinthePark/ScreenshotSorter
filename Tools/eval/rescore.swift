@@ -25,6 +25,10 @@ struct RescoreLine: Codable {
     var app: String?
     var lines: Int
     var text: String
+    /// What the viewer shows: title, the one button, and the details list
+    var title: String?
+    var action: String?
+    var details: [String]?
 }
 
 private func column(_ statement: OpaquePointer?, _ index: Int32) -> Data? {
@@ -119,13 +123,27 @@ func runRescore(database: String, out: URL, modelSample: Int = 0) async throws {
             }
             if total / stride % 20 == 19 { print("  model sample \(total / stride + 1)") }
         }
+        let shown = output.categories.map(\.category).filter { $0 != .all }
+        let lineTexts = features.lines.map(\.text)
+        let placeName = PlaceCard.name(in: lineTexts) ?? PlaceCard.taggedVenue(in: lineTexts)
+        let quick = QuickAction.suggest(categories: shown, entities: entities, placeName: placeName, text: features.fullText)
+        let actionText: String? = quick.map { action in
+            switch action.kind {
+            case .open(let url): return "\(action.title) → \(url.absoluteString.removingPercentEncoding ?? url.absoluteString)"
+            case .copy(let value): return "\(action.title) → copy \(value)"
+            }
+        }
+        let details = QuickAction.details(categories: shown, entities: entities, primary: quick, text: features.fullText).map { "\($0.type.rawValue): \($0.value)" }
+        let appName = output.app?.displayName ?? ScreenshotClassifier.knownApp(insight?.app)
+        let title = ScreenshotTitle.choose(model: insight?.title, features: features, app: appName)
         let content = features.lines.filter { $0.zone != .statusBar }
         let line = RescoreLine(id: String(id.prefix(8)), before: before, after: after,
                                tagsBefore: oldTags.map { "\($0.value)[\(sourceLetters($0.sources))]" },
                                tagsAfter: output.tags.map { "\($0.value)[\(sourceLetters($0.sources))]" },
                                ruleHits: hits, vision: vision, model: model, modelNow: modelNow, afterWithModel: afterWithModel,
                                app: output.app?.displayName,
-                               lines: content.count, text: String(content.map(\.text).joined(separator: " | ").prefix(400)))
+                               lines: content.count, text: String(content.map(\.text).joined(separator: " | ").prefix(400)),
+                               title: title, action: actionText, details: details)
         try handle.write(contentsOf: encoder.encode(line) + Data("\n".utf8))
     }
 
