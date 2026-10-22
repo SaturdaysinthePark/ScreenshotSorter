@@ -34,9 +34,9 @@ extension Brand.Copy {
         static let showFewer: String = "Show fewer"
         static let sortMenu: String = "Sort stacks"
         static let moreMenu: String = "More"
-        static let reanalyze: String = "Re-sort everything"
-        static let reanalyzeConfirmTitle: String = "Re-sort every screenshot?"
-        static let reanalyzeConfirmBody: String = "We'll take a fresh look at your whole library. Your manual edits are kept."
+        static let reanalyze: String = "Read everything again"
+        static let reanalyzeConfirmTitle: String = "Read every screenshot again?"
+        static let reanalyzeConfirmBody: String = "We'll look at your whole library from scratch, which takes a while. You don't need this for updates: new sorting applies on its own. Your edits are kept."
         static let pause: String = "Pause sorting"
         static let resume: String = "Resume sorting"
     }

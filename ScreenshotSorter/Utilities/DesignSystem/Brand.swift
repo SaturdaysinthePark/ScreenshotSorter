@@ -33,10 +33,8 @@ enum Brand {
         /// The system's progress UI (Live Activity) while sorting continues in the background
         enum Background {
             static let sortingTitle: String = "Sorting screenshots"
-            static func toGo(_ count: Int) -> String { "\(count) to go" }
             static let doneTitle: String = "Screenshots sorted"
-            static let pausedTitle: String = "Sorting paused"
-            static func paused(_ count: Int) -> String { "\(count) left · continues when you open the app" }
+            static let doneSubtitle: String = "All done"
         }
 
         enum Access {

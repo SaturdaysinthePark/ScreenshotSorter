@@ -192,8 +192,15 @@ final class AppModel {
             authorizationDenied = !granted
             if granted {
                 await loadLibrary()
+                await submitSortingTask()
             }
         }
+    }
+
+    /// After a tap that starts a big sort, let it keep going with a system progress UI if the user leaves the app
+    private func submitSortingTask() async {
+        let progress = await scheduler.currentProgress()
+        BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: progress.fastRemaining + progress.deepRemaining)
     }
 
     private func loadLibrary() async {
@@ -269,8 +276,9 @@ final class AppModel {
             Task { await scheduler.setInBackground(false) }
             syncReviewedFromDefaults()
         case .inactive:
-            // The system progress UI covers sorting only; titles and tags from the model finish overnight
-            BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: progress.fastRemaining + progress.deepRemaining)
+            // Not here: a continued-processing task starts only from a tap (Apple cancels automatic ones), see
+            // `submitSortingTask()`. Whatever is left when the app leaves finishes overnight or on the next launch.
+            break
         case .background:
             Task { await scheduler.setInBackground(true) }
             if !progress.isIdle {
@@ -374,14 +382,17 @@ final class AppModel {
     func togglePause() {
         let paused = !progress.isPaused
         progress.isPaused = paused
-        Task { await scheduler.setPaused(paused) }
+        Task {
+            await scheduler.setPaused(paused)
+            if !paused { await submitSortingTask() }
+        }
     }
 
     func reanalyzeAll() {
         Task {
             await store.invalidate(ids: nil, resetVision: true)
             await reconcile(assets: library.allScreenshots.map(\.asset))
-            BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: library.count)
+            await submitSortingTask()
         }
     }
 
