@@ -80,6 +80,17 @@ struct RealLibraryRegressionTests {
         #expect(!labels(ad, insight: recipe).contains(.recipes))
     }
 
+    @Test func imageBackedAnswersLabelAloneExceptFallbackTopics() {
+        let post = screen(["Kukbingwan", "specialty", "Seoul"])
+        func insight(_ topic: ScreenshotCategory) -> ModelInsight {
+            ModelInsight(primary: topic, secondary: [], confidence: 0.9, app: nil, title: "", summary: "", tags: [], sawImage: true)
+        }
+        #expect(labels(post, insight: insight(.food)).contains(.food))
+        // Its fallbacks when unsure, image or not (events ~5/12 right on a real phone)
+        #expect(!labels(post, insight: insight(.events)).contains(.events))
+        #expect(!labels(post, insight: insight(.orders)).contains(.orders))
+    }
+
     @Test func textlessScreenshotsAreNotSentToATextOnlyModel() {
         let photo = screen(["9:41"])
         #expect(!FMClassifier.isWorthAsking(photo, canSeeImages: false))

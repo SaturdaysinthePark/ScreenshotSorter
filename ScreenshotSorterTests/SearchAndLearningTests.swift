@@ -4,6 +4,26 @@ import Testing
 
 struct SearchAndLearningTests {
 
+    /// A collection named "girl" should gather screenshots of girls, not every post that says "girl"
+    @Test func collectionSearchIgnoresWordsOnScreen() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("scope-\(UUID().uuidString).sqlite").path
+        let store = try AnalysisStore(path: path)
+        guard store.isFTSAvailable else { return }
+        var shows = AnalysisRecord(id: "shows", createdAt: Date())
+        shows.tags = [ScreenshotTag(value: "girl", score: 0.8, sources: .visionClassifier)]
+        shows.ocrText = "Saturday in the park"
+        var mentions = AnalysisRecord(id: "mentions", createdAt: Date())
+        mentions.ocrText = "This girl is on fire, says the review"
+        await store.upsert([shows, mentions])
+        let search = SearchService(store: store, vectors: VectorIndex())
+        var context = SearchContext()
+        context.dates = ["shows": Date(), "mentions": Date()]
+        let everything = await search.search(QueryParser.parse("girl"), context: context).map(\.id)
+        #expect(Set(everything) == ["shows", "mentions"])
+        let collection = await search.search(QueryParser.parse("girl"), context: context, scope: .whatItShows).map(\.id)
+        #expect(collection == ["shows"])
+    }
+
     @Test func editDistance() {
         #expect(SearchService.editDistance("recipt", "receipt", limit: 2) == 1)
         #expect(SearchService.editDistance("kitten", "sitting", limit: 3) == 3)
@@ -56,6 +76,24 @@ struct SearchAndLearningTests {
         let clusters = Clusterer.cluster(entries)
         #expect(clusters.count == 2)
         #expect(clusters.allSatisfy { $0.memberIDs.count >= Clusterer.Parameters().minimumSize })
+    }
+
+    /// A real library's TikTok feed formed one 556-screenshot "cluster" (same layout, same tab bar): that's
+    /// not a pattern worth suggesting. A shared topic is.
+    @Test func smartSuggestionsMustShareATopic() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("smart-\(UUID().uuidString).sqlite").path
+        let engine = SmartCollectionEngine(store: try AnalysisStore(path: path), vectors: VectorIndex())
+        var context = ClusterContext()
+        context.libraryCount = 1_000
+        let feed = (0..<30).map { "feed\($0)" }
+        for id in feed { context.tags[id] = ["tiktok"]; context.tagDocumentFrequency["tiktok", default: 0] += 1 }
+        let sneakers = (0..<20).map { "shoe\($0)" }
+        for id in sneakers { context.topic[id] = .shoes; context.tags[id] = ["tiktok"] }
+        #expect(await !engine.isCoherent(feed, context: context))
+        #expect(await engine.isCoherent(sneakers, context: context))
+        let huge = (0..<400).map { "big\($0)" }
+        for id in huge { context.topic[id] = .food }
+        #expect(await !engine.isCoherent(huge, context: context), "too broad to be a pattern")
     }
 
     @Test func sameConceptDetection() {

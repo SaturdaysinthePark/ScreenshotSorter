@@ -60,8 +60,14 @@ actor FMClassifier {
     }
 
     /// - Parameter image: the screenshot, used when the model can see images (`canSeeImages`)
+    private var loggedCapabilities = false
+
     func insight(for features: ExtractedFeatures, appHint: String?, image: CGImage? = nil) async -> FMOutcome {
         guard FMClassifier.isAvailable else { return .unavailable }
+        if !loggedCapabilities {
+            loggedCapabilities = true
+            FMClassifier.logger.notice("Language model ready · sees images: \(FMClassifier.canSeeImages, privacy: .public) · first request with image: \(image != nil, privacy: .public)")
+        }
         var budget = FMClassifier.maxPromptCharacters
         for attempt in 0..<2 {
             let prompt = FMClassifier.prompt(for: features, appHint: appHint, budget: budget)

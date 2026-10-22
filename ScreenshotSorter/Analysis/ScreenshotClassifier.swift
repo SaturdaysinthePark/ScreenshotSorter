@@ -64,7 +64,9 @@ enum ScreenshotClassifier {
     /// When rules and Vision found no topic inside an app (a TikTok post is just "TikTok"), a text-only "sure"
     /// answer fills the gap: right ~3 in 4 there. Not for the topics the model falls back on when it has no idea.
     static let modelGapScore = 0.55
-    static let modelFallbackTopics: Set<ScreenshotCategory> = [.events, .receipts, .codes, .documents, .other]
+    /// Its fallback picks when unsure, even with the image (on a real iPhone 17 Pro, iOS 27: events ~5/12 right,
+    /// orders 0/3, documents 1/3, against ~45/48 for everything else). These always need another source to agree.
+    static let modelFallbackTopics: Set<ScreenshotCategory> = [.events, .receipts, .codes, .documents, .orders, .other]
 
     /// Nothing says what the screenshot is about yet — only the app, a face-less "People", or "Other".
     /// These go first in the language-model lane, where seeing the post or product helps most.
@@ -127,7 +129,8 @@ enum ScreenshotClassifier {
             var model: [ScreenshotCategory: Double] = [:]
             let sawImage = insight.sawImage == true
             if let primary = insight.primary {
-                model[primary] = insight.confidence * (sawImage ? modelImagePrimaryWeight : modelPrimaryWeight)
+                let trusted = sawImage && !modelFallbackTopics.contains(primary)
+                model[primary] = insight.confidence * (trusted ? modelImagePrimaryWeight : modelPrimaryWeight)
             }
             for category in insight.secondary where model[category] == nil {
                 model[category] = insight.confidence * (sawImage ? modelImageSecondaryWeight : modelSecondaryWeight)

@@ -326,6 +326,7 @@ final class LibraryStore {
         for (id, screenshot) in items {
             context.tags[id] = screenshot.tags
             context.topCategory[id] = screenshot.categories.first
+            context.topic[id] = screenshot.categories.first { $0.kind != .app && $0 != .other }
             if let app = screenshot.app { context.apps[id] = app }
             if let title = screenshot.title { context.titles[id] = title }
             for tag in Set(screenshot.tags) { context.tagDocumentFrequency[tag, default: 0] += 1 }

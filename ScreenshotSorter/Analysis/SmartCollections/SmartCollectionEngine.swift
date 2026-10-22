@@ -6,6 +6,8 @@ struct ClusterContext: Sendable {
     var candidateIDs: [String] = []
     var tags: [String: [String]] = [:]
     var topCategory: [String: ScreenshotCategory] = [:]
+    /// First category that isn't an app or Other (a TikTok post about food → food)
+    var topic: [String: ScreenshotCategory] = [:]
     var apps: [String: String] = [:]
     var titles: [String: String] = [:]
     /// All library ids (for tag document frequency)
@@ -26,6 +28,12 @@ actor SmartCollectionEngine {
     static let joinSimilarity: Float = 0.75
     static let tagAgreement = 0.5
     static let categoryOverlap = 0.7
+    /// A suggestion is about one thing: this share of members shares a topic (not an app)…
+    static let topicAgreement = 0.6
+    /// …and it's specific: TikTok feeds all look alike (same layout, same tab bar text), and on a real
+    /// library one "cluster" swallowed 556 of 1,938 screenshots.
+    static let maxMembers = 200
+    static let maxLibraryShare = 0.15
 
     static let allowedSymbols = [
         "sparkles", "airplane", "house.fill", "cart.fill", "fork.knife", "tshirt.fill", "heart.fill", "book.fill",
@@ -52,6 +60,11 @@ actor SmartCollectionEngine {
     /// Re-cluster and add new suggestions (keeps at most `maxVisibleSuggestions` pending).
     func refresh(context: ClusterContext) async -> [SmartCollection] {
         var collections = await store.smartCollections()
+        // Suggestions made before the coherence rules (or since made stale) go
+        for stale in collections where stale.status == .suggested && !isCoherent(stale.memberIDs, context: context) {
+            await store.deleteSmartCollection(id: stale.id)
+        }
+        collections = await store.smartCollections()
         let pending = collections.filter { $0.status == .suggested }
         guard pending.count < SmartCollectionEngine.maxVisibleSuggestions else { return collections }
 
@@ -69,12 +82,8 @@ actor SmartCollectionEngine {
             if knownSignatures.contains(where: { $0.count == cluster.centroid.count && cosine($0, cluster.centroid) >= SmartCollectionEngine.dismissedSimilarity }) {
                 continue
             }
+            guard isCoherent(cluster.memberIDs, context: context) else { continue }
             let topTags = distinctiveTags(for: cluster.memberIDs, context: context)
-            let withTopTag = cluster.memberIDs.filter { id in
-                !Set(context.tags[id] ?? []).isDisjoint(with: topTags.prefix(3))
-            }.count
-            let agreement = Double(withTopTag) / Double(cluster.memberIDs.count)
-            guard agreement >= SmartCollectionEngine.tagAgreement || cluster.cohesion >= 0.85 else { continue }
 
             guard let naming = await name(cluster: cluster, topTags: topTags, context: context) else { continue }
             // Redundant with a curated category ("Receipts" cluster of receipts)?
@@ -230,10 +239,26 @@ actor SmartCollectionEngine {
     }
 
     /// Tags over-represented in the cluster relative to the library (TF-IDF).
+    /// About one thing, and specific: a shared topic or shared distinctive tags (app names don't count — every
+    /// TikTok screenshot has "tiktok"), and not a large slice of the library.
+    func isCoherent(_ ids: [String], context: ClusterContext) -> Bool {
+        guard ids.count >= SmartCollectionEngine.minimumMembers, ids.count <= SmartCollectionEngine.maxMembers,
+              Double(ids.count) <= SmartCollectionEngine.maxLibraryShare * Double(max(context.libraryCount, 1)) else { return false }
+        var topics: [ScreenshotCategory: Int] = [:]
+        for id in ids { if let topic = context.topic[id] { topics[topic, default: 0] += 1 } }
+        if let best = topics.values.max(), Double(best) / Double(ids.count) >= SmartCollectionEngine.topicAgreement { return true }
+        let topTags = distinctiveTags(for: ids, context: context).prefix(3)
+        guard !topTags.isEmpty else { return false }
+        let withTag = ids.filter { !Set(context.tags[$0] ?? []).isDisjoint(with: topTags) }.count
+        return Double(withTag) / Double(ids.count) >= SmartCollectionEngine.tagAgreement
+    }
+
     func distinctiveTags(for ids: [String], context: ClusterContext) -> [String] {
         var counts: [String: Int] = [:]
         for id in ids {
-            for tag in Set(context.tags[id] ?? []) { counts[tag, default: 0] += 1 }
+            for tag in Set(context.tags[id] ?? []) where ScreenshotClassifier.knownApp(tag) == nil {
+                counts[tag, default: 0] += 1
+            }
         }
         let total = Double(max(1, context.libraryCount))
         return counts
@@ -268,6 +293,9 @@ actor SmartCollectionEngine {
         }
         guard let result = naming, !result.name.isEmpty, result.name.count <= 32 else { return nil }
         let lowered = result.name.lowercased()
+        // Not an app ("TikTok · Explore Following") or a copied screenshot title
+        guard !result.name.contains("·"), !titles.contains(result.name),
+              !lowered.split(separator: " ").contains(where: { ScreenshotClassifier.knownApp(String($0)) != nil }) else { return nil }
         guard !SmartCollectionEngine.blockedNameFragments.contains(where: { lowered.contains($0) }) else { return nil }
         return result
     }

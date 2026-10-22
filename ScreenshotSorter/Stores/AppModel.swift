@@ -621,7 +621,7 @@ final class AppModel {
     func collectionMatches(for name: String) async -> [String] {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else { return [] }
-        let results = await searchService.search(QueryParser.parse(trimmed), context: currentSearchContext())
+        let results = await searchService.search(QueryParser.parse(trimmed), context: currentSearchContext(), scope: .whatItShows)
         return Array(results.prefix(AppModel.maxNewCollectionMembers).map(\.id))
     }
 

@@ -16,6 +16,15 @@ struct SearchContext: Sendable {
     var entityTypes: [String: Set<EntityType>] = [:]
 }
 
+/// What a query is matched against.
+enum SearchScope: Sendable {
+    /// Every word on screen too: finds an order number, a quote, a name in a chat
+    case everything
+    /// Only what a screenshot shows (title, tags, Vision labels, meaning), not every word in it: for filling a
+    /// collection, where "girl" should mean pictures of girls, not every post that says "girl"
+    case whatItShows
+}
+
 /// Hybrid search: FTS5 BM25 (prefix + typo tolerant) + trigram substrings + semantic embeddings,
 /// combined with reciprocal rank fusion.
 actor SearchService {
@@ -40,7 +49,10 @@ actor SearchService {
         self.embedder = embedder
     }
 
-    func search(_ query: ParsedQuery, context: SearchContext, now: Date = Date()) async -> [SearchHit] {
+    /// Meaning matches must be this close when OCR text doesn't count
+    static let whatItShowsSemanticFloor: Float = 0.55
+
+    func search(_ query: ParsedQuery, context: SearchContext, scope: SearchScope = .everything, now: Date = Date()) async -> [SearchHit] {
         guard !query.isEmpty else { return [] }
         let allowed = filterIDs(query, context: context)
 
@@ -55,25 +67,29 @@ actor SearchService {
         await refreshVocabularyIfNeeded()
 
         // Lexical
-        var lexical = await store.ftsSearch(match: matchExpression(query, joiner: " "), limit: SearchService.maxResults)
-        if lexical.isEmpty && query.terms.count > 1 {
-            lexical = await store.ftsSearch(match: matchExpression(query, joiner: " OR "), limit: SearchService.maxResults)
+        func scoped(_ expression: String) -> String {
+            scope == .whatItShows ? "{title tags} : (" + expression + ")" : expression
         }
-        if !store.isFTSAvailable {
+        var lexical = await store.ftsSearch(match: scoped(matchExpression(query, joiner: " ")), limit: SearchService.maxResults)
+        if lexical.isEmpty && query.terms.count > 1 {
+            lexical = await store.ftsSearch(match: scoped(matchExpression(query, joiner: " OR ")), limit: SearchService.maxResults)
+        }
+        if !store.isFTSAvailable && scope == .everything {
             let ids = await store.likeSearch(query.freeText, limit: SearchService.maxResults)
             lexical = ids.enumerated().map { FTSHit(id: $0.element, rank: Double($0.offset), snippet: nil) }
         }
 
         // Substrings (order numbers, codes, partial words)
         var trigram: [String] = []
-        if lexical.count < 20 {
+        if lexical.count < 20 && scope == .everything {
             trigram = await store.trigramSearch(query.freeText, limit: 100)
         }
 
         // Semantic
         var semantic: [(id: String, similarity: Float)] = []
         if let vector = await embedder.embed(query.freeText) {
-            semantic = await vectors.textNearest(to: vector, k: 200, minimum: SearchService.semanticFloor)
+            let floor = scope == .whatItShows ? SearchService.whatItShowsSemanticFloor : SearchService.semanticFloor
+            semantic = await vectors.textNearest(to: vector, k: 200, minimum: floor)
         }
 
         // Reciprocal rank fusion
