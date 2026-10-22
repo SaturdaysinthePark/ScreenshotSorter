@@ -114,6 +114,53 @@ actor SmartCollectionEngine {
         }
     }
 
+    /// A collection the user named ("Barcelona trip", "Gift ideas"), started from what search found for that name.
+    /// Its centroid is the mean of those screenshots, so new ones that look like them join over time (`absorb`).
+    func create(name: String, memberIDs: [String]) async -> [SmartCollection] {
+        let vectors = await self.vectors.combinedVectors(for: memberIDs).map(\.1)
+        var centroid: [Float] = []
+        if let dimension = vectors.first?.count {
+            centroid = [Float](repeating: 0, count: dimension)
+            for vector in vectors where vector.count == dimension {
+                for index in 0..<dimension { centroid[index] += vector[index] }
+            }
+            let norm = centroid.reduce(0) { $0 + $1 * $1 }.squareRoot()
+            if norm > 0 { centroid = centroid.map { $0 / norm } }
+        }
+        let collection = SmartCollection(
+            id: "user-" + UUID().uuidString, name: name, symbol: SmartCollectionEngine.symbol(forName: name),
+            status: .kept, centroid: centroid, cohesion: 1, memberIDs: memberIDs, removedIDs: [],
+            createdAt: Date(), decidedAt: Date())
+        await store.saveSmartCollection(collection)
+        return await store.smartCollections()
+    }
+
+    /// An icon from the words of a name, else sparkles
+    static func symbol(forName name: String) -> String {
+        let words = Set(name.lowercased().split { !$0.isLetter }.map(String.init))
+        let table: [(Set<String>, String)] = [
+            (["trip", "travel", "flight", "flights", "vacation", "holiday"], "airplane"),
+            (["recipe", "recipes", "food", "dinner", "eat", "restaurant", "restaurants"], "fork.knife"),
+            (["coffee", "cafe", "cafes", "tea"], "cup.and.saucer.fill"),
+            (["gift", "gifts", "birthday", "christmas"], "gift.fill"),
+            (["home", "house", "apartment", "interior", "decor"], "house.fill"),
+            (["outfit", "outfits", "style", "fashion", "clothes"], "tshirt.fill"),
+            (["book", "books", "reading", "read"], "book.fill"),
+            (["music", "songs", "playlist", "concert", "concerts"], "music.note"),
+            (["movie", "movies", "film", "films", "watch", "shows"], "film.fill"),
+            (["game", "games", "gaming", "gameplay"], "gamecontroller.fill"),
+            (["work", "job", "jobs", "career", "office"], "briefcase.fill"),
+            (["workout", "gym", "fitness", "run", "running"], "dumbbell.fill"),
+            (["shop", "shopping", "wishlist", "buy"], "bag.fill"),
+            (["art", "design", "inspiration", "ideas"], "paintpalette.fill"),
+            (["pet", "pets", "dog", "dogs", "cat", "cats"], "pawprint.fill"),
+            (["car", "cars"], "car.fill"),
+            (["event", "events", "wedding", "party"], "calendar"),
+            (["map", "places", "spots"], "map.fill")
+        ]
+        return table.first { !$0.0.isDisjoint(with: words) }?.1 ?? "sparkles"
+    }
+
     func dismiss(id: String) async -> [SmartCollection] {
         await update(id: id) {
             $0.status = .dismissed

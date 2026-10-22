@@ -68,7 +68,7 @@
   {"name": "coffee", "labels": [["drink", 0.8], ["coffee", 0.85]], "expect": ["drinks"]},
   {"name": "forest", "labels": [["forest", 0.85], ["tree", 0.8], ["nature", 0.7]], "expect": ["nature"]},
   {"name": "dress", "labels": [["clothing", 0.9], ["dress", 0.85]], "expect": ["clothes"]},
-  {"name": "cooking", "labels": [["cooking", 0.8], ["kitchen", 0.7]], "expect": ["cooking"]},
+  {"name": "cooking", "labels": [["cooking", 0.8], ["kitchen", 0.7]], "expect": ["food"], "allow": ["recipes"]},
   {"name": "location settings (no cat)", "lines": [["Privacy & Security", "topBar"], ["Location Services", "body"], ["Share My Location", "body"], ["Categories", "body"], ["Settings", "topBar"], ["Bluetooth", "body"], ["Screen Time", "body"]], "expect": ["settings"], "forbid": ["animals"]},
   {"name": "login screen (no documents)", "lines": [["Sign in", "topBar"], ["Profile", "body"], ["Password", "body"], ["Forgot password?", "body"]], "forbid": ["documents"]},
   {"name": "card ending (no vehicles)", "lines": [["Card ending in 1234", "body"], ["Cart", "body"], ["Scarlet", "body"]], "forbid": ["vehicles", "animals"]}

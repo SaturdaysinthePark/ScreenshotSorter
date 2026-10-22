@@ -136,7 +136,7 @@ enum CategoryRules {
             weak: ["order": 0.25, "shipping": 0.25, "package": 0.3, "delivery": 0.25, "carrier": 0.3]
         ),
         CategoryRule(
-            category: .storefronts,
+            category: .places,
             strong: ["open now": 0.5, "closes at": 0.55, "opens at": 0.55, "store hours": 0.7, "storefront": 0.7],
             weak: ["hours": 0.2, "store": 0.2, "visit us": 0.3]
         )
@@ -153,7 +153,7 @@ enum CategoryRules {
             weak: ["book": 0.3, "novel": 0.35, "read": 0.1, "pages": 0.15, "series": 0.15]
         ),
         CategoryRule(
-            category: .reading,
+            category: .books,
             strong: ["kindle": 0.6, "apple books": 0.75, "min left in chapter": 0.9,
                      "chapter": 0.35, "location": 0.05],
             weak: ["highlight": 0.3, "page": 0.15]
@@ -235,7 +235,7 @@ enum CategoryRules {
                        .allOf(["restaurants", "hotels"], weight: 0.6)]
         ),
         CategoryRule(
-            category: .sitesOfInterest,
+            category: .places,
             strong: ["museum": 0.6, "national park": 0.75, "landmark": 0.6, "monument": 0.65, "cathedral": 0.6,
                      "tourist attraction": 0.8, "unesco": 0.8, "historic site": 0.8],
             weak: ["tour": 0.25, "visit": 0.15, "history": 0.2, "gallery": 0.2]
@@ -260,7 +260,7 @@ enum CategoryRules {
             weak: ["sleep": 0.2, "health": 0.25, "doctor": 0.3, "medical": 0.3, "patient": 0.3, "mg": 0.2]
         ),
         CategoryRule(
-            category: .exercise,
+            category: .health,
             strong: ["workout": 0.65, "active calories": 0.85, "move ring": 0.85, "strava": 0.9, "reps": 0.6,
                      "sets": 0.15, "personal record": 0.75, "pace": 0.3, "peloton": 0.85,
                      "training plan": 0.7, "stand hours": 0.85],
@@ -285,7 +285,7 @@ enum CategoryRules {
                    "salt": 0.2, "pepper": 0.15, "garlic": 0.25, "butter": 0.25, "sugar": 0.2]
         ),
         CategoryRule(
-            category: .cooking,
+            category: .recipes,
             strong: ["preheat": 0.5, "simmer": 0.6, "saute": 0.65, "stir fry": 0.6, "air fryer": 0.7,
                      "dutch oven": 0.7],
             weak: ["bake": 0.25, "stir": 0.2, "boil": 0.3, "chop": 0.3, "dice": 0.25, "oven": 0.25, "pan": 0.15]
@@ -461,12 +461,12 @@ enum CategoryRules {
             weak: ["dog": 0.3, "cat": 0.3, "pet": 0.3, "vet": 0.2, "breed": 0.3]
         ),
         CategoryRule(
-            category: .beaches,
+            category: .nature,
             strong: ["beach": 0.4],
             weak: ["ocean": 0.2, "surf": 0.25, "coast": 0.2]
         ),
         CategoryRule(
-            category: .mountains,
+            category: .nature,
             strong: ["summit": 0.3, "trailhead": 0.6, "elevation gain": 0.75],
             weak: ["hike": 0.25, "trail": 0.25, "peak": 0.2, "mountain": 0.3]
         ),
@@ -476,7 +476,7 @@ enum CategoryRules {
             weak: ["plant": 0.3, "soil": 0.3, "repot": 0.4, "sunlight": 0.2]
         ),
         CategoryRule(
-            category: .flowers,
+            category: .nature,
             strong: ["bouquet": 0.55, "florist": 0.7],
             weak: ["roses": 0.3, "tulips": 0.35, "flowers": 0.3, "bloom": 0.25]
         )
@@ -490,7 +490,7 @@ enum CategoryRules {
             "washingtonpost.com", "wsj.com", "bloomberg.com", "ft.com", "aljazeera.com", "nbcnews.com", "cbsnews.com",
             "foxnews.com", "usatoday.com", "politico.com", "axios.com", "theverge.com", "techcrunch.com", "wired.com",
             "arstechnica.com", "latimes.com", "economist.com", "theatlantic.com", "ycombinator.com", "news.google.com"], weight: 0.75)]),
-        CategoryRule(category: .reading, patterns: [.host(["wikipedia.org", "medium.com", "substack.com"], weight: 0.4)]),
+        CategoryRule(category: .news, patterns: [.host(["medium.com", "substack.com"], weight: 0.5)]),
         CategoryRule(category: .stores, patterns: [.host([
             "amazon.com", "target.com", "walmart.com", "bestbuy.com", "ikea.com", "nike.com", "etsy.com", "ebay.com",
             "wayfair.com", "costco.com", "zara.com", "hm.com", "uniqlo.com", "sephora.com", "shein.com", "temu.com"], weight: 0.7)]),

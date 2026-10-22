@@ -1209,6 +1209,21 @@ private struct InsightDrawer: View {
         return Array(result.prefix(16))
     }
 
+    private var quickAction: QuickAction? {
+        QuickAction.suggest(categories: displayCategories, entities: entities)
+    }
+
+    private func perform(_ action: QuickAction) {
+        switch action.kind {
+        case .open(let url):
+            open(url)
+        case .copy(let value):
+            UIPasteboard.general.string = value
+            HapticManager.shared.success()
+            onToast(Brand.Copy.Detail.copied, "doc.on.doc.fill")
+        }
+    }
+
     private var ocrText: String {
         record?.ocrText.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
@@ -1275,12 +1290,19 @@ private struct InsightDrawer: View {
 
                 Spacer(minLength: 0)
 
+                // Icon only, like the chevron next to it: the title gets the room
                 Button {
                     onEdit()
                 } label: {
-                    Label(Brand.Copy.Detail.edit, systemImage: "pencil")
+                    Image(systemName: "pencil")
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(Palette.brand)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(Palette.brand.opacity(0.12)))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.brand(.secondary, size: .compact))
+                .buttonStyle(.pressableCard)
                 .accessibilityLabel(Brand.Copy.Detail.editLabels)
 
                 Button {
@@ -1298,6 +1320,18 @@ private struct InsightDrawer: View {
                 .buttonStyle(.pressableCard)
                 .accessibilityLabel(isExpanded ? Brand.Copy.Detail.collapse : Brand.Copy.Detail.expand)
                 .accessibilityHint(Brand.Copy.Detail.insightsHint)
+            }
+
+            if let quickAction {
+                Button {
+                    perform(quickAction)
+                } label: {
+                    Label(quickAction.title, systemImage: quickAction.systemImage)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.brand(.primary, size: .compact))
+                .transition(.opacity)
             }
 
             categoryRow
@@ -1674,22 +1708,11 @@ private enum EntityStyle {
     }
 
     static func webURL(for entity: ExtractedEntity) -> URL? {
-        let raw: String = (entity.normalized ?? entity.value).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return nil }
-        let lowered: String = raw.lowercased()
-        if lowered.hasPrefix("http://") || lowered.hasPrefix("https://") {
-            return URL(string: raw)
-        }
-        return URL(string: "https://" + raw)
+        QuickAction.webURL(for: entity)
     }
 
     static func mapsURL(for query: String) -> URL? {
-        var allowed: CharacterSet = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "&=+?#")
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed), !encoded.isEmpty else {
-            return nil
-        }
-        return URL(string: "http://maps.apple.com/?q=" + encoded)
+        QuickAction.mapsURL(for: query)
     }
 }
 

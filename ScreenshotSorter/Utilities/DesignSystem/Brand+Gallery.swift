@@ -11,9 +11,8 @@ extension Brand.Copy {
         static let deselectAll: String = "Deselect all"
         static let sort: String = "Sort"
         static let sortHint: String = "Changes the order of screenshots"
-        static let screenshotsLabel: String = "Screenshots"
-        static let thisWeekLabel: String = "This week"
-        static let sortingLabel: String = "Still sorting"
+        static func stillSorting(_ count: Int) -> String { "\(count.formatted()) still sorting" }
+        static func newThisWeek(_ count: Int) -> String { "\(count.formatted()) this week" }
         static let today: String = "Today"
         static let yesterday: String = "Yesterday"
         static let thisWeek: String = "This week"
@@ -74,6 +73,12 @@ extension Brand.Copy {
         static let copy: String = "Copy"
         static let copyText: String = "Copy text"
         static let copied: String = "Copied"
+        // Quick actions (one per screenshot, chosen from what it's about)
+        static func copyCode(_ code: String) -> String { "Copy code \(code)" }
+        static let copyTracking: String = "Copy tracking number"
+        static let openInMaps: String = "Open in Maps"
+        static func openSite(_ site: String) -> String { "Open \(site)" }
+        static let call: String = "Call"
         static let textCopied: String = "Text copied"
         static let showMore: String = "Show more"
         static let showLess: String = "Show less"

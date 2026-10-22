@@ -27,7 +27,7 @@ enum VisionLabelMap {
                       "chocolate", "icecream", "ice", "cheese", "fries", "dumpling", "ramen", "barbecue", "baked"]),
         (.drinks, 0.95, ["drink", "beverage", "coffee", "espresso", "latte", "cappuccino", "tea", "cocktail",
                          "beer", "wine", "juice", "smoothie", "soda", "liquor", "whiskey", "martini", "milkshake"]),
-        (.cooking, 0.85, ["cooking", "kitchen", "chef", "baking", "oven", "stove", "cookware", "frying"]),
+        (.food, 0.85, ["cooking", "kitchen", "chef", "baking", "oven", "stove", "cookware", "frying"]),
         (.clothes, 0.9, ["clothing", "apparel", "garment", "shirt", "tshirt", "dress", "jacket", "coat", "jeans",
                          "denim", "pants", "trousers", "skirt", "sweater", "hoodie", "suit", "blouse", "shorts",
                          "swimsuit", "lingerie", "outfit", "fashion", "hat", "cap", "scarf"]),
@@ -48,19 +48,19 @@ enum VisionLabelMap {
                               "electronics", "drone"]),
         (.nature, 0.75, ["nature", "forest", "tree", "trees", "woods", "grass", "field", "meadow", "jungle",
                          "waterfall", "river", "lake", "wilderness", "park", "foliage"]),
-        (.landscapes, 0.9, ["landscape", "scenery", "vista", "valley", "canyon", "cliff", "desert", "horizon",
+        (.nature, 0.9, ["landscape", "scenery", "vista", "valley", "canyon", "cliff", "desert", "horizon",
                             "hill", "countryside", "panorama"]),
-        (.beaches, 0.95, ["beach", "shore", "coast", "ocean", "sea", "seashore", "sand", "tropical", "island",
+        (.nature, 0.95, ["beach", "shore", "coast", "ocean", "sea", "seashore", "sand", "tropical", "island",
                           "surf", "wave", "waves", "lagoon"]),
-        (.mountains, 0.95, ["mountain", "mountains", "peak", "summit", "alpine", "volcano", "glacier", "ridge"]),
-        (.flowers, 0.95, ["flower", "flowers", "rose", "tulip", "daisy", "orchid", "sunflower", "lily", "bouquet",
+        (.nature, 0.95, ["mountain", "mountains", "peak", "summit", "alpine", "volcano", "glacier", "ridge"]),
+        (.nature, 0.95, ["flower", "flowers", "rose", "tulip", "daisy", "orchid", "sunflower", "lily", "bouquet",
                           "blossom", "petal", "bloom", "lavender"]),
         (.plants, 0.85, ["plant", "plants", "houseplant", "succulent", "cactus", "fern", "leaf", "leaves",
                          "garden", "potted", "vegetation", "moss"]),
-        (.sunset, 0.95, ["sunset", "sunrise", "dusk", "dawn", "twilight"]),
-        (.sitesOfInterest, 0.85, ["landmark", "monument", "museum", "temple", "church", "cathedral", "castle",
+        (.nature, 0.95, ["sunset", "sunrise", "dusk", "dawn", "twilight"]),
+        (.places, 0.85, ["landmark", "monument", "museum", "temple", "church", "cathedral", "castle",
                                   "palace", "tower", "bridge", "ruins", "statue", "mosque", "skyline"]),
-        (.storefronts, 0.8, ["storefront", "shop", "store", "boutique", "cafe", "restaurant", "bakery", "market",
+        (.places, 0.8, ["storefront", "shop", "store", "boutique", "cafe", "restaurant", "bakery", "market",
                              "mall", "signage"]),
         (.art, 0.85, ["art", "painting", "drawing", "sketch", "illustration", "sculpture", "mural", "graffiti",
                       "artwork", "canvas", "watercolor"]),
@@ -71,7 +71,7 @@ enum VisionLabelMap {
         (.codes, 0.8, ["qrcode", "barcode"]),
         (.sports, 0.85, ["sport", "sports", "soccer", "football", "basketball", "baseball", "tennis", "golf",
                          "hockey", "stadium", "athlete", "ball"]),
-        (.exercise, 0.8, ["gym", "exercise", "workout", "fitness", "yoga", "running", "dumbbell", "weightlifting"]),
+        (.health, 0.8, ["gym", "exercise", "workout", "fitness", "yoga", "running", "dumbbell", "weightlifting"]),
         (.music, 0.6, ["guitar", "piano", "concert", "drum", "drums", "violin", "microphone", "musician"]),
         (.videoGames, 0.6, ["videogame", "gaming", "joystick", "controller", "gamepad"]),
         (.weather, 0.5, ["rain", "snow", "storm", "lightning", "rainbow", "fog"]),
@@ -113,9 +113,9 @@ enum VisionLabelMap {
     static let modifierWeight = 0.5
 
     /// Scene categories that show up behind almost any outdoor subject (grass behind a dog, trees behind a house)
-    static let backgroundCategories: Set<ScreenshotCategory> = [.nature, .plants, .landscapes]
+    static let backgroundCategories: Set<ScreenshotCategory> = [.nature, .plants]
     static let foregroundCategories: Set<ScreenshotCategory> = [
-        .animals, .people, .vehicles, .homes, .food, .drinks, .sitesOfInterest, .storefronts, .furniture,
+        .animals, .people, .vehicles, .homes, .food, .drinks, .places, .furniture,
         .electronics, .clothes, .shoes, .bags, .watches, .jewelry, .sports
     ]
     /// A foreground subject at least this likely scales background scene categories by `backgroundScale`
@@ -124,9 +124,7 @@ enum VisionLabelMap {
 
     /// Specific categories that a generic one should not outrank once the specific label appears at all
     /// (Vision reports "plant" at 0.9 and "flower" at 0.3 for a rose).
-    static let specificOverGeneric: [(specific: ScreenshotCategory, generic: ScreenshotCategory)] = [
-        (.flowers, .plants), (.mountains, .landscapes), (.sunset, .landscapes), (.beaches, .nature)
-    ]
+    static let specificOverGeneric: [(specific: ScreenshotCategory, generic: ScreenshotCategory)] = []
     static let specificMinimum = 0.25
 
     /// Per-category score: max over labels of confidence × mapping weight, then scene/subject adjustments.

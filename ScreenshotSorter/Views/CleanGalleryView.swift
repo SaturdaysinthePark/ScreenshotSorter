@@ -1123,7 +1123,7 @@ private struct GalleryHeader: View {
     @State private var appeared: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.md) {
+        VStack(alignment: .leading, spacing: Space.sm) {
             HStack(alignment: .center, spacing: Space.md) {
                 Image(systemName: icon)
                     .font(.title2.weight(.bold))
@@ -1166,18 +1166,18 @@ private struct GalleryHeader: View {
         }
     }
 
+    /// One quiet line instead of stat cards: the grid below already shows the screenshots
     private var pills: some View {
-        let layout: AnyLayout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.sm))
-            : AnyLayout(HStackLayout(spacing: Space.sm))
-        return layout {
-            StatPill(value: count, label: Brand.Copy.Gallery.screenshotsLabel, systemImage: "photo.stack.fill", tint: tint)
-            if unsortedCount > 0 {
-                StatPill(value: unsortedCount, label: Brand.Copy.Gallery.sortingLabel, systemImage: "sparkles", tint: Palette.brandSecondary)
-            } else {
-                StatPill(value: thisWeekCount, label: Brand.Copy.Gallery.thisWeekLabel, systemImage: "calendar", tint: Palette.brandSecondary)
-            }
+        var parts = [Brand.screenshots(count)]
+        if unsortedCount > 0 {
+            parts.append(Brand.Copy.Gallery.stillSorting(unsortedCount))
+        } else if thisWeekCount > 0 {
+            parts.append(Brand.Copy.Gallery.newThisWeek(thisWeekCount))
         }
+        return Text(parts.joined(separator: " · "))
+            .font(.dsCallout)
+            .foregroundStyle(Palette.inkSecondary)
+            .contentTransition(.numericText())
     }
 }
 
@@ -1212,7 +1212,7 @@ private struct GallerySectionHeader: View {
     var body: some View {
         HStack(spacing: Space.xs) {
             Text(title)
-                .font(.dsHeadline)
+                .font(.dsCallout.weight(.semibold))
                 .foregroundStyle(.primary)
             Text(count, format: .number)
                 .font(.dsCaption)

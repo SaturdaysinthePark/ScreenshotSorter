@@ -2,7 +2,22 @@ import Foundation
 
 // Home, search and smart-collection copy. Kept next to `Brand` so tone and name stay in one place.
 extension Brand.Copy {
+    enum NewCollection {
+        static let title: String = "New collection"
+        static let placeholder: String = "What's it for?"
+        static let hint: String = "Name it and we'll gather what fits — new screenshots join on their own."
+        static let searching: String = "Looking…"
+        static let noMatches: String = "Nothing matches yet. Try another word."
+        static func matches(_ count: Int) -> String { count >= 500 ? "500+ screenshots match" : "\(Brand.screenshots(count)) match" }
+        static let create: String = "Create"
+        static let cancel: String = "Cancel"
+        static let newButton: String = "New"
+        static func alreadyExists(_ category: String) -> String { "\(category) is already sorted for you" }
+    }
+
     enum Home {
+        /// Collection card subtitle when screenshots arrived since it was last opened
+        static func newSinceVisit(_ count: Int) -> String { "+\(count) new" }
         static let title: String = "Your stacks"
         static func greeting(for date: Date = Date()) -> String {
             let hour = Calendar.current.component(.hour, from: date)
@@ -13,12 +28,10 @@ extension Brand.Copy {
             default: return "Up late?"
             }
         }
-        static let totalLabel: String = "Screenshots"
-        static let sortedLabel: String = "% sorted"
-        static let stacksLabel: String = "Stacks"
         static let allScreenshots: String = "All Screenshots"
-        static let allScreenshotsSubtitle: String = "Every single one, newest first"
-        static let yourCollections: String = "Your collections"
+        static let collectionsTitle: String = "Collections"
+        static func showAll(_ count: Int) -> String { "Show all \(count)" }
+        static let showFewer: String = "Show fewer"
         static let sortMenu: String = "Sort stacks"
         static let moreMenu: String = "More"
         static let reanalyze: String = "Re-sort everything"

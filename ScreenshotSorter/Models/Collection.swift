@@ -100,7 +100,17 @@ struct ShelfRanking: Equatable {
 
     init() {}
 
-    /// `collections` in the order they should appear inside their shelves; shelves rank by total size, "Other" last.
+    /// Topic shelves (Food & Drink, Places & Travel…) come before the app shelves (Social Media, Communication):
+    /// what a screenshot is about matters more than where it was taken. "Other" is always last.
+    static func tier(_ group: CategoryGroup) -> Int {
+        switch group {
+        case .other: return 2
+        case .socialMedia, .communication: return 1
+        default: return 0
+        }
+    }
+
+    /// `collections` in the order they should appear inside their shelves; shelves rank by tier, then total size.
     init(_ collections: [ScreenshotCollection]) {
         var totals: [CategoryGroup: Int] = [:]
         for (index, collection) in collections.enumerated() {
@@ -108,7 +118,7 @@ struct ShelfRanking: Equatable {
             totals[collection.category.group, default: 0] += collection.count
         }
         let ordered = totals.keys.sorted { lhs, rhs in
-            if (lhs == .other) != (rhs == .other) { return rhs == .other }
+            if ShelfRanking.tier(lhs) != ShelfRanking.tier(rhs) { return ShelfRanking.tier(lhs) < ShelfRanking.tier(rhs) }
             return totals[lhs]! == totals[rhs]! ? lhs.rawValue < rhs.rawValue : totals[lhs]! > totals[rhs]!
         }
         for (index, group) in ordered.enumerated() { groups[group] = index }
@@ -125,7 +135,7 @@ struct ShelfRanking: Equatable {
         let firstSeen = Dictionary(uniqueKeysWithValues: byGroup.map { ($0.key, $0.value.map(\.offset).min() ?? 0) })
         return byGroup.keys
             .sorted { lhs, rhs in
-                if (lhs == .other) != (rhs == .other) { return rhs == .other }
+                if ShelfRanking.tier(lhs) != ShelfRanking.tier(rhs) { return ShelfRanking.tier(lhs) < ShelfRanking.tier(rhs) }
                 let l = groups[lhs] ?? Int.max, r = groups[rhs] ?? Int.max
                 return l == r ? firstSeen[lhs]! < firstSeen[rhs]! : l < r
             }

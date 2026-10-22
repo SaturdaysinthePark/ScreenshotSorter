@@ -19,6 +19,9 @@ struct RescoreLine: Codable {
     var ruleHits: [String: [String]]
     var vision: [String: Double]
     var model: String?
+    /// Current FMClassifier's answer, when this screenshot was in the --model sample
+    var modelNow: String?
+    var afterWithModel: [String]?
     var app: String?
     var lines: Int
     var text: String
@@ -50,7 +53,7 @@ private func storedLabels(_ raw: String) -> [String] {
     }
 }
 
-func runRescore(database: String, out: URL) throws {
+func runRescore(database: String, out: URL, modelSample: Int = 0) async throws {
     var db: OpaquePointer?
     guard sqlite3_open_v2(database, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { fatalError("cannot open \(database)") }
     defer { sqlite3_close(db) }
@@ -66,6 +69,14 @@ func runRescore(database: String, out: URL) throws {
     let handle = try FileHandle(forWritingTo: out)
     var countsBefore: [String: Int] = [:], countsAfter: [String: Int] = [:]
     var total = 0, changed = 0, tagsBefore = 0, tagsAfter = 0
+    var countStatement: OpaquePointer?
+    var libraryCount = 1
+    if sqlite3_prepare_v2(db, "SELECT count(*) FROM assets WHERE features IS NOT NULL", -1, &countStatement, nil) == SQLITE_OK,
+       sqlite3_step(countStatement) == SQLITE_ROW {
+        libraryCount = max(1, Int(sqlite3_column_int(countStatement, 0)))
+    }
+    sqlite3_finalize(countStatement)
+    let stride = modelSample > 0 ? max(1, libraryCount / modelSample) : Int.max
 
     while sqlite3_step(statement) == SQLITE_ROW {
         guard let id = columnText(statement, 0),
@@ -96,11 +107,24 @@ func runRescore(database: String, out: URL) throws {
             String(format: "%@ +%@ %.2f app=%@", insight.primary?.key ?? "-", insight.secondary.map(\.key).joined(separator: "/"),
                    insight.confidence, insight.app ?? "-")
         }
+        var modelNow: String?
+        var afterWithModel: [String]?
+        if total % stride == 0 {
+            if case .insight(let fresh) = await FMClassifier.shared.insight(for: features, appHint: output.app?.displayName) {
+                modelNow = String(format: "%@ +%@ %.1f \"%@\" tags=%@", fresh.primary?.key ?? "-",
+                                  fresh.secondary.map(\.key).joined(separator: "/"), fresh.confidence, fresh.title,
+                                  fresh.tags.joined(separator: ","))
+                afterWithModel = ScreenshotClassifier.classify(features: features, insight: fresh, entities: entities).categories
+                    .map { String(format: "%@=%.2f[%@]", $0.category.key, $0.score, sourceLetters($0.sources)) }
+            }
+            if total / stride % 20 == 19 { print("  model sample \(total / stride + 1)") }
+        }
         let content = features.lines.filter { $0.zone != .statusBar }
         let line = RescoreLine(id: String(id.prefix(8)), before: before, after: after,
                                tagsBefore: oldTags.map { "\($0.value)[\(sourceLetters($0.sources))]" },
                                tagsAfter: output.tags.map { "\($0.value)[\(sourceLetters($0.sources))]" },
-                               ruleHits: hits, vision: vision, model: model, app: output.app?.displayName,
+                               ruleHits: hits, vision: vision, model: model, modelNow: modelNow, afterWithModel: afterWithModel,
+                               app: output.app?.displayName,
                                lines: content.count, text: String(content.map(\.text).joined(separator: " | ").prefix(400)))
         try handle.write(contentsOf: encoder.encode(line) + Data("\n".utf8))
     }

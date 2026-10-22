@@ -46,11 +46,11 @@ struct RealLibraryRegressionTests {
 
     @Test func languageModelAloneDoesNotAddCategories() {
         let search = screen(["Memoirs of hadrian", "Title", "Author", "Showing results 1-5 of 45"])
-        let insight = ModelInsight(primary: .events, secondary: [.memes, .reading], confidence: 0.92,
+        let insight = ModelInsight(primary: .events, secondary: [.memes, .news], confidence: 0.92,
                                    app: "private_app", title: "", summary: "", tags: ["books", "private app", "novel"])
         let output = ScreenshotClassifier.classify(features: search, insight: insight, includeEntities: false)
         let result = output.categories.map(\.category)
-        #expect(!result.contains(.events) && !result.contains(.memes) && !result.contains(.reading))
+        #expect(!result.contains(.events) && !result.contains(.memes) && !result.contains(.news))
         let tags = output.tags.map(\.value)
         #expect(tags.contains("novel"))
         #expect(!tags.contains("books") && !tags.contains("private app"))
@@ -100,14 +100,19 @@ struct RealLibraryRegressionTests {
         func collection(_ category: ScreenshotCategory, _ count: Int) -> ScreenshotCollection {
             ScreenshotCollection(kind: .category(category), title: category.displayName, icon: "", screenshots: [], count: count)
         }
-        let ranking = ShelfRanking([collection(.food, 50), collection(.drinks, 20), collection(.tiktok, 10), collection(.other, 99)])
-        // Social now outnumbers food & drink, and a new category appeared
-        let later = [collection(.tiktok, 300), collection(.food, 60), collection(.recipes, 40), collection(.drinks, 21), collection(.other, 120)]
+        let ranking = ShelfRanking([collection(.food, 50), collection(.drinks, 20), collection(.places, 10),
+                                    collection(.tiktok, 400), collection(.other, 99)])
+        // Places now outnumbers food & drink, and a new category appeared
+        let later = [collection(.tiktok, 500), collection(.places, 300), collection(.food, 60), collection(.recipes, 40),
+                     collection(.drinks, 21), collection(.other, 120)]
         let shelves = ranking.shelves(later)
-        #expect(shelves.map(\.group) == [ScreenshotCategory.food.group, ScreenshotCategory.tiktok.group, ScreenshotCategory.other.group])
+        #expect(shelves.map(\.group) == [ScreenshotCategory.food.group, ScreenshotCategory.places.group,
+                                          ScreenshotCategory.tiktok.group, ScreenshotCategory.other.group])
         let foodShelf = shelves.first { $0.group == ScreenshotCategory.food.group }!.collections.map(\.category)
         #expect(foodShelf == [.food, .drinks, .recipes])
-        // A fresh ranking follows the new counts
-        #expect(ShelfRanking(later).shelves(later).first?.group == ScreenshotCategory.tiktok.group)
+        // A fresh ranking follows the new counts; topic shelves still come before the biggest app shelf
+        #expect(ShelfRanking(later).shelves(later).map(\.group).prefix(3) == [ScreenshotCategory.places.group,
+                                                                              ScreenshotCategory.food.group,
+                                                                              ScreenshotCategory.tiktok.group])
     }
 }

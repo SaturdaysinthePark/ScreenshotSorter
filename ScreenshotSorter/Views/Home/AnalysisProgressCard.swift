@@ -26,7 +26,7 @@ struct AnalysisProgressCard: View {
         let fraction = total > 0 ? Double(analyzed) / Double(total) : 0
         let isFastPhase = progress.fastRemaining > 0
 
-        VStack(alignment: .leading, spacing: Space.sm) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             if dynamicTypeSize.isAccessibilitySize {
                 // Text gets the full width; side by side it would wrap mid-word.
                 HStack(spacing: Space.sm) {
@@ -47,23 +47,24 @@ struct AnalysisProgressCard: View {
             DSProgressBar(progress: barFraction(analyzedFraction: fraction))
                 .dsAnimation(Motion.gentle, value: fraction)
         }
-        .padding(Space.md)
+        .padding(.horizontal, Space.md)
+        .padding(.vertical, Space.sm)
         .dsCard(tint: Palette.brand)
         .accessibilityElement(children: .contain)
     }
 
     private var statusIcon: some View {
         Image(systemName: phase == .paused ? "pause.circle.fill" : phase == .waiting ? "icloud.and.arrow.down" : "wand.and.stars")
-            .font(.dsTitle2)
+            .font(.dsHeadline)
             .foregroundStyle(Palette.brand)
             .symbolEffect(.variableColor.iterative, options: .repeating, isActive: phase != .paused && phase != .waiting && !reduceMotion)
-            .frame(width: 36)
+            .frame(width: 28)
     }
 
     private func labels(analyzed: Int, total: Int, isFastPhase: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(headline(analyzed: analyzed, total: total, isFastPhase: isFastPhase))
-                .font(.dsHeadline)
+                .font(.dsCallout.weight(.semibold))
                 .foregroundStyle(Palette.ink)
                 .contentTransition(.numericText())
             if let detail = detailLine {
@@ -83,8 +84,8 @@ struct AnalysisProgressCard: View {
             }
         } label: {
             Image(systemName: progress.isPaused ? "play.fill" : "pause.fill")
-                .font(.dsHeadline)
-                .frame(width: 40, height: 40)
+                .font(.dsCaption.weight(.bold))
+                .frame(width: 32, height: 32)
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.glass)

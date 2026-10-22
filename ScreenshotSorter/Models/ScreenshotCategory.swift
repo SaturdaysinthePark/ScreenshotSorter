@@ -13,17 +13,9 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
     case people = "People"
     case shoes = "Shoes"
 
-    // Messaging apps
-    case imessage = "iMessage"
-    case whatsapp = "WhatsApp"
-    case signal = "Signal"
-    case telegram = "Telegram"
-    case discord = "Discord"
-    case slack = "Slack"
-
-    // Email
+    // Conversations (which app is shown on the screenshot and searchable, not a collection of its own)
+    case messages = "Messages"
     case email = "Email"
-    case gmail = "Gmail"
 
     // Social media
     case instagram = "Instagram"
@@ -37,12 +29,10 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
     // Food & Drinks
     case food = "Food"
     case drinks = "Drinks"
-    case cooking = "Cooking"
     case recipes = "Recipes"
 
     // Shopping
-    case stores = "Stores"
-    case storefronts = "Storefronts"
+    case stores = "Shopping"
 
     // Products
     case watches = "Watches"
@@ -53,33 +43,25 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
     case electronics = "Electronics"
 
     // Lifestyle
-    case homes = "Homes"
-    case sitesOfInterest = "Sites of Interest"
-    case animals = "Animals"
+    case homes = "Home & Interior"
+    case animals = "Animals & Pets"
     case quotes = "Quotes"
 
     // Nature & Outdoors
-    case nature = "Nature"
-    case landscapes = "Landscapes"
-    case beaches = "Beaches"
-    case mountains = "Mountains"
-    case flowers = "Flowers"
+    case nature = "Nature & Outdoors"
     case plants = "Plants"
-    case sunset = "Sunset"
 
     // Media
-    case books = "Books"
+    case books = "Books & Reading"
     case movies = "Movies & TV"
     case music = "Music"
     case videoGames = "Video Games"
 
     // Travel & Activities
-    case flights = "Flights & Travel"
+    case flights = "Travel"
     case memes = "Memes"
     case sports = "Sports"
-    case exercise = "Exercise"
-    case art = "Art"
-    case reading = "Reading"
+    case art = "Art & Design"
 
     // Utility
     case documents = "Documents"
@@ -88,15 +70,15 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
     case weather = "Weather"
     case news = "News & Articles"
     case notifications = "Notifications"
-    case iosHomeScreens = "iOS Home Screens"
+    case iosHomeScreens = "Home Screens"
     case settings = "Settings"
     case errors = "Errors & Bugs"
 
     // Added in the 2026 ML pass
-    case finance = "Money & Finance"
+    case finance = "Money"
     case tickets = "Tickets & Passes"
-    case orders = "Orders & Shipping"
-    case programming = "Programming"
+    case orders = "Orders & Deliveries"
+    case programming = "Code"
     case aiChats = "AI Chats"
 
     case other = "Other"
@@ -113,17 +95,9 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
         case .people: return "person.fill"
         case .shoes: return "shoe.fill"
 
-        // Messaging apps
-        case .imessage: return "message.fill"
-        case .whatsapp: return "message.circle.fill"
-        case .signal: return "lock.fill"
-        case .telegram: return "paperplane.fill"
-        case .discord: return "bubble.left.and.bubble.right.fill"
-        case .slack: return "number"
-
-        // Email
+        // Conversations
+        case .messages: return "message.fill"
         case .email: return "envelope.fill"
-        case .gmail: return "envelope.badge.fill"
 
         // Social media
         case .instagram: return "camera.fill"
@@ -137,12 +111,10 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
         // Food & Drinks
         case .food: return "fork.knife"
         case .drinks: return "cup.and.saucer.fill"
-        case .cooking: return "flame.fill"
         case .recipes: return "book.pages.fill"
 
         // Shopping
         case .stores: return "cart.fill"
-        case .storefronts: return "storefront.fill"
 
         // Products
         case .watches: return "watchface.applewatch.case"
@@ -154,18 +126,12 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
 
         // Lifestyle
         case .homes: return "house.fill"
-        case .sitesOfInterest: return "building.columns.fill"
         case .animals: return "pawprint.fill"
         case .quotes: return "quote.bubble.fill"
 
         // Nature & Outdoors
         case .nature: return "leaf.fill"
-        case .landscapes: return "photo.fill.on.rectangle.fill"
-        case .beaches: return "water.waves"
-        case .mountains: return "mountain.2.fill"
-        case .flowers: return "camera.macro"
         case .plants: return "leaf.arrow.circlepath"
-        case .sunset: return "sun.horizon.fill"
 
         // Media
         case .books: return "book.fill"
@@ -177,9 +143,7 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
         case .flights: return "airplane"
         case .memes: return "face.smiling.fill"
         case .sports: return "sportscourt.fill"
-        case .exercise: return "figure.run"
         case .art: return "paintpalette.fill"
-        case .reading: return "text.book.closed.fill"
 
         // Utility
         case .documents: return "doc.text.fill"
@@ -217,11 +181,23 @@ enum ScreenshotCategory: String, CaseIterable, Hashable {
 
     /// Legacy display names that have since been renamed
     private static let legacyNames: [String: ScreenshotCategory] = [
-        "Code & QR": .codes
+        "Code & QR": .codes, "Stores": .stores, "Homes": .homes, "Animals": .animals, "Nature": .nature,
+        "Books": .books, "Flights & Travel": .flights, "Art": .art, "iOS Home Screens": .iosHomeScreens,
+        "Money & Finance": .finance, "Orders & Shipping": .orders, "Programming": .programming
+    ]
+
+    /// Categories merged in October 2026 (fewer, clearer collections). Stored labels and user corrections
+    /// written with an old key land in the category that absorbed it.
+    static let mergedKeys: [String: ScreenshotCategory] = [
+        "landscapes": .nature, "beaches": .nature, "mountains": .nature, "flowers": .nature, "sunset": .nature,
+        "storefronts": .places, "sitesOfInterest": .places,
+        "cooking": .recipes, "exercise": .health, "reading": .books, "gmail": .email,
+        "imessage": .messages, "whatsapp": .messages, "signal": .messages, "telegram": .messages,
+        "discord": .messages, "slack": .messages
     ]
 
     init?(key: String) {
-        guard let category = ScreenshotCategory.byKey[key] else { return nil }
+        guard let category = ScreenshotCategory.byKey[key] ?? ScreenshotCategory.mergedKeys[key] else { return nil }
         self = category
     }
 
@@ -297,7 +273,7 @@ enum CategoryGroup: String, CaseIterable {
             return .socialMedia
 
         // Communication
-        case .imessage, .whatsapp, .signal, .telegram, .discord, .slack, .email, .gmail, .aiChats:
+        case .messages, .email, .aiChats:
             return .communication
 
         // Clothing & Accessories
@@ -313,12 +289,11 @@ enum CategoryGroup: String, CaseIterable {
             return .homeLiving
 
         // Food & Drink
-        case .food, .drinks, .cooking, .recipes:
+        case .food, .drinks, .recipes:
             return .foodDrink
 
         // Places & Travel
-        case .places, .storefronts, .sitesOfInterest, .directions, .flights,
-             .nature, .landscapes, .beaches, .mountains, .sunset:
+        case .places, .directions, .flights, .nature:
             return .placesTravel
 
         // Events & Planning
@@ -334,8 +309,7 @@ enum CategoryGroup: String, CaseIterable {
             return .mediaEntertainment
 
         // Lifestyle & Wellness
-        case .health, .sports, .weather, .people, .animals,
-             .flowers, .plants, .exercise, .art, .reading:
+        case .health, .sports, .weather, .people, .animals, .plants, .art:
             return .lifestyleWellness
 
         // Information

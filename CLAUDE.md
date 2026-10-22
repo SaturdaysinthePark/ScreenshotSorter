@@ -29,7 +29,8 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
 - `Analysis/` — the pipeline:
   - `AnalysisScheduler` (actor): sliding-window concurrency, urgent → fast → deep → model lanes,
     budgets from `ResourceGovernor` (thermal / Low Power / background). The language model runs one
-    at a time and only after deep work is done (~2–3 s per request on device, serialised system-wide).
+    at a time and only after deep work is done (~1.5–3 s per request on device). Screenshots with no topic
+    yet (only an app, face-less People, Other) go first (`ScreenshotClassifier.needsTopic`).
   - `AnalysisPipeline`: fast pass (1280px, one Vision handler: classifier + fast OCR + barcodes +
     faces) → deep pass (2048px, accurate OCR + feature print, entities, embedding; decides if the
     model is worth it) → model pass (Foundation Models from stored features) → `rescore` (rules/fusion
@@ -40,8 +41,15 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
   - `ScreenshotClassifier` (pure): `TextNormalizer` (token-boundary matching, screen zones),
     `RuleEngine` + `CategoryRules`, `AppDetector` + `AppSignatures`, `VisionLabelMap`,
     `EntityExtractor`, `SignalFusion` (noisy-OR with per-source reliabilities, user overrides).
-  - `FoundationModels/`: guided generation constrained to `CategoryKey` (must mirror
-    `ScreenshotCategory`; enforced by `CategoryKeySyncTests`). Optional — everything works without it.
+  - `FoundationModels/`: guided generation constrained to `TopicKey` (every non-app category; enforced by
+    `CategoryKeySyncTests`). On iOS 27 the model also sees a 768px copy when `capabilities.contains(.vision)`
+    (`FMClassifier.canSeeImages`; code behind `#if compiler(>=6.4)` so Xcode 26 still builds). Text-only
+    answers corroborate but never label alone; image-backed "sure" answers can. The model's wording is
+    sensitive: field order, case order ("other" first) and instruction length each moved accuracy by 5–15
+    points — measure with `Tools/eval/run.sh … --model` (macOS 26 runs it text-only), never by eye.
+    Optional — everything works without it. No Private Cloud Compute: "nothing is uploaded" is a promise.
+  - iOS 27 restricts background Neural Engine use (entitlement
+    `com.apple.developer.background-tasks.continued-processing.inference`); verify background sorting on device.
   - `SmartCollections/`: conservative clustering → suggestions (≥8 members, ≤3 visible, Keep required).
 - `Learning/UserFeedbackLearner.swift` — corrections override; kNN propagation needs ≥2 agreeing
   neighbours; per-category calibration.
@@ -64,6 +72,9 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
 3. Run `GoldenSetTests` and `CorpusRegressionTests`; keep macro-F1 ≥ the floors and every category reachable.
 4. Bump `PipelineVersion.rules` so existing libraries re-score from stored features (no re-OCR).
    Bump `.vision` only when image extraction changes.
+
+## Product
+- Strategy, competitor (Pool) and research notes: `docs/strategy.md`.
 
 ## Conventions
 - Animations go through `Motion` / `.dsAnimation`; test with Reduce Motion, dark mode, largest

@@ -10,6 +10,8 @@ struct ModelInsight: Codable, Sendable, Hashable {
     var title: String
     var summary: String
     var tags: [String]
+    /// The model looked at the screenshot, not only its text (iOS 27+). Optional so older records decode.
+    var sawImage: Bool?
 }
 
 /// User feedback relevant to one screenshot.
@@ -55,6 +57,16 @@ enum ScreenshotClassifier {
     static let singleMentionScale = 0.6
     static let modelPrimaryWeight = 0.5
     static let modelSecondaryWeight = 0.3
+    /// Having seen the screenshot, a "sure" topic may stand on its own (0.9 × 0.75 × reliability ≈ 0.6);
+    /// "likely" still needs another source to agree.
+    static let modelImagePrimaryWeight = 0.75
+    static let modelImageSecondaryWeight = 0.45
+
+    /// Nothing says what the screenshot is about yet — only the app, a face-less "People", or "Other".
+    /// These go first in the language-model lane, where seeing the post or product helps most.
+    static func needsTopic(_ categories: [ScreenshotCategory]) -> Bool {
+        !categories.contains { $0.kind != .app && $0 != .other && $0 != .people }
+    }
 
     static func visionScale(lineCount: Int) -> Double {
         guard lineCount > photoLineCount else { return 1 }
@@ -109,9 +121,12 @@ enum ScreenshotClassifier {
         input.categoryBias = user.bias
         if let insight {
             var model: [ScreenshotCategory: Double] = [:]
-            if let primary = insight.primary { model[primary] = insight.confidence * modelPrimaryWeight }
+            let sawImage = insight.sawImage == true
+            if let primary = insight.primary {
+                model[primary] = insight.confidence * (sawImage ? modelImagePrimaryWeight : modelPrimaryWeight)
+            }
             for category in insight.secondary where model[category] == nil {
-                model[category] = insight.confidence * modelSecondaryWeight
+                model[category] = insight.confidence * (sawImage ? modelImageSecondaryWeight : modelSecondaryWeight)
             }
             input.model = model
         }

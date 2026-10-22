@@ -54,6 +54,9 @@ actor AnalysisScheduler {
     private var deepQueue: [String] = []
     private var deepIndex = 0
     private var modelQueue: [String] = []
+    /// Screenshots with no topic yet run before the rest of the model lane
+    private var modelFirstQueue: [String] = []
+    private var modelFirstIndex = 0
     private var modelIndex = 0
     private var queuedFast = Set<String>()
     private var queuedDeep = Set<String>()
@@ -119,14 +122,18 @@ actor AnalysisScheduler {
     }
 
     /// Queue language-model passes (records that already have deep features).
-    func enqueueModel(_ items: [(id: String, date: Date)]) {
+    func enqueueModel(_ items: [(id: String, date: Date)], first: Bool = false) {
         for item in items {
             dates[item.id] = item.date
             removed.remove(item.id)
         }
         let fresh = items.filter { !queuedModel.contains($0.id) }.sorted { $0.date > $1.date }
         for item in fresh { queuedModel.insert(item.id) }
-        modelQueue.append(contentsOf: fresh.map(\.id))
+        if first {
+            modelFirstQueue.append(contentsOf: fresh.map(\.id))
+        } else {
+            modelQueue.append(contentsOf: fresh.map(\.id))
+        }
         updateCounts()
         wake()
         start()
@@ -259,6 +266,15 @@ actor AnalysisScheduler {
     }
 
     private func nextModel() -> String? {
+        while modelFirstIndex < modelFirstQueue.count {
+            let id = modelFirstQueue[modelFirstIndex]
+            modelFirstIndex += 1
+            if queuedModel.contains(id) && !inFlight.contains(id) && !removed.contains(id) { return id }
+        }
+        if modelFirstIndex > 0 {
+            modelFirstQueue.removeAll(keepingCapacity: true)
+            modelFirstIndex = 0
+        }
         while modelIndex < modelQueue.count {
             let id = modelQueue[modelIndex]
             modelIndex += 1
@@ -394,7 +410,11 @@ actor AnalysisScheduler {
             completionTimes.append(Date())
             if outcome.needsModel, !queuedModel.contains(id) {
                 queuedModel.insert(id)
-                modelQueue.append(id)
+                if outcome.modelFirst {
+                    modelFirstQueue.append(id)
+                } else {
+                    modelQueue.append(id)
+                }
             }
         }
         // Re-queued for a fast pass while in flight (e.g. edited): `nextFast` skipped it then

@@ -93,6 +93,10 @@ final class AppModel {
     /// is frozen while sorting runs (shelves jumping up and down is disorienting) and refreshed at launch,
     /// when sorting finishes and when the sort option changes. New categories join the end of their shelf.
     private(set) var shelfRanking = ShelfRanking()
+    /// When each collection was last opened, for "+N new" on its card
+    private(set) var collectionVisits: [String: Date] =
+        (UserDefaults.standard.dictionary(forKey: AppModel.visitsKey) as? [String: Date]) ?? [:]
+    private static let visitsKey = "collectionVisits"
     private(set) var reviewBannerDismissedAt: Date? = UserDefaults.standard.object(forKey: AppModel.reviewDismissedKey) as? Date
     var propagationSuggestion: PropagationSuggestion?
     /// Undone correction groups, so a suggestion still being computed for one never appears.
@@ -210,6 +214,7 @@ final class AppModel {
         var fast: [(id: String, date: Date)] = []
         var deep: [(id: String, date: Date)] = []
         var model: [(id: String, date: Date)] = []
+        var modelFirst: [(id: String, date: Date)] = []
         var rescore: [String] = []
         let modelAvailable = FMClassifier.isAvailable
         for asset in assets {
@@ -223,15 +228,22 @@ final class AppModel {
                 fast.append(item)
             } else if state.tier == .fast || state.needsNetwork {
                 deep.append(item)
-            } else if modelAvailable && state.fmVersion < PipelineVersion.fm {
-                // Text and features are stored: only the language-model step is missing
-                model.append(item)
-            } else if state.rulesVersion < PipelineVersion.rules {
-                rescore.append(item.id)
+            } else {
+                // Text and features are stored. New rules apply now (cheap, no pixels), even when the
+                // language-model step is still to come — that lane can take hours on a big library.
+                if state.rulesVersion < PipelineVersion.rules { rescore.append(item.id) }
+                if modelAvailable && state.fmVersion < PipelineVersion.fm {
+                    if ScreenshotClassifier.needsTopic(library.screenshot(id: item.id)?.categories ?? []) {
+                        modelFirst.append(item)
+                    } else {
+                        model.append(item)
+                    }
+                }
             }
         }
         await scheduler.enqueueFast(fast)
         await scheduler.enqueueDeep(deep)
+        await scheduler.enqueueModel(modelFirst, first: true)
         await scheduler.enqueueModel(model)
         if !rescore.isEmpty {
             await rescoreRecords(ids: rescore)
@@ -254,6 +266,24 @@ final class AppModel {
         @unknown default:
             break
         }
+    }
+
+    func markVisited(_ kind: CollectionKind) {
+        collectionVisits[kind.id] = Date()
+        UserDefaults.standard.set(collectionVisits, forKey: AppModel.visitsKey)
+    }
+
+    /// Screenshots taken since the collection was last opened; nil if it never was (the card shows the total).
+    /// O(new): ids are newest first.
+    func newCount(for kind: CollectionKind) -> Int? {
+        guard let visit = collectionVisits[kind.id] else { return nil }
+        var count = 0
+        for id in library.ids(for: kind) {
+            guard let date = library.screenshot(id: id)?.creationDate, date > visit else { break }
+            count += 1
+            if count == 999 { break }
+        }
+        return count
     }
 
     func refreshShelfRanking() {
@@ -585,6 +615,25 @@ final class AppModel {
 
     func renameSmartCollection(_ id: String, to name: String) {
         Task { library.setSmartCollections(await smartEngine.rename(id: id, to: name)) }
+    }
+
+    /// Screenshots that match a name the user is typing for a new collection, best first
+    func collectionMatches(for name: String) async -> [String] {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+        let results = await searchService.search(QueryParser.parse(trimmed), context: currentSearchContext())
+        return Array(results.prefix(AppModel.maxNewCollectionMembers).map(\.id))
+    }
+
+    static let maxNewCollectionMembers = 500
+
+    func createCollection(named name: String, memberIDs: [String]) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        Task {
+            library.setSmartCollections(await smartEngine.create(name: trimmed, memberIDs: memberIDs))
+            refreshShelfRanking()
+        }
     }
 
     func deleteSmartCollection(_ id: String) {

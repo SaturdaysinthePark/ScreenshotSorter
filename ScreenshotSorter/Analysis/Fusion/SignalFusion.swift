@@ -17,14 +17,14 @@ enum CategoryKind: Sendable, CaseIterable {
 extension ScreenshotCategory {
     var kind: CategoryKind {
         switch self {
-        case .animals, .people, .nature, .landscapes, .beaches, .mountains, .flowers, .plants, .sunset,
-             .sitesOfInterest, .storefronts:
+        case .animals, .people, .nature, .plants:
             return .visual
         // Products are named on the listing as reliably as they are seen in the photo
-        case .food, .drinks, .clothes, .shoes, .homes, .vehicles, .electronics, .books, .art, .cooking, .sports, .exercise,
+        // Places absorbed landmarks and storefronts (photos) as well as place cards (text)
+        case .places, .food, .drinks, .clothes, .shoes, .homes, .vehicles, .electronics, .books, .art, .sports,
              .watches, .bags, .jewelry, .furniture:
             return .mixed
-        case .imessage, .whatsapp, .signal, .telegram, .discord, .slack, .email, .gmail,
+        case .messages, .email,
              .instagram, .tiktok, .twitter, .facebook, .linkedin, .reddit, .youtube:
             return .app
         case .codes:
@@ -89,7 +89,7 @@ struct FusionConfig: Sendable {
     /// text-rule evidence for topical categories is scaled by this when a messaging app is identified.
     var messagingTopicDamping: Double = 0.6
     var messagingAppConfidence: Double = 0.8
-    static let messagingCategories: Set<ScreenshotCategory> = [.imessage, .whatsapp, .signal, .telegram, .discord, .slack]
+    static let messagingCategories: Set<ScreenshotCategory> = [.messages]
 
     static let `default` = FusionConfig()
 

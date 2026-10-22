@@ -46,6 +46,7 @@ struct CollectionsView: View {
         .navigationDestination(for: CollectionKind.self) { kind in
             CleanGalleryView(kind: kind, zoomNamespace: zoomNamespace)
                 .navigationTransition(.zoom(sourceID: kind.id, in: zoomNamespace))
+                .onDisappear { model.markVisited(kind) }
         }
         .fullScreenCover(isPresented: $showReview, onDismiss: {
             model.syncReviewedFromDefaults()
@@ -79,59 +80,32 @@ struct CollectionsView: View {
     @ViewBuilder
     private var homeContent: some View {
         LazyVStack(alignment: .leading, spacing: Space.lg) {
-            heroStats
-                .padding(.horizontal, Space.gutter)
-
-            if !model.progress.isIdle || model.progress.isPaused || model.progress.waitingForNetwork > 0 {
+            // Not while only titles are being polished: everything is sorted by then
+            if model.progress.fastRemaining + model.progress.deepRemaining > 0 || model.progress.isPaused
+                || model.progress.waitingForNetwork > 0 {
                 AnalysisProgressCard()
-                    .padding(.horizontal, Space.gutter)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            if model.showReviewBanner {
-                ReviewBannerView(
-                    unreviewedCount: model.unreviewedCount,
-                    isProcessing: !model.progress.isIdle,
-                    onReviewTapped: {
-                        HapticManager.shared.lightTap()
-                        showReview = true
-                    },
-                    onDismiss: {
-                        Motion.perform(Motion.snappy, reduceMotion: reduceMotion) {
-                            model.dismissReviewBanner()
-                        }
-                    }
-                )
-                .padding(.horizontal, Space.gutter)
-                .transition(.scale(scale: 0.96).combined(with: .opacity))
-            }
-
-            if let suggestion = model.propagationSuggestion {
-                PropagationCard(suggestion: suggestion)
-                    .padding(.horizontal, Space.gutter)
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
-            }
+            nextStep
 
             if model.isLibraryLoaded && model.library.isEmpty {
                 EmptyLibraryView()
                     .padding(.top, Space.xl)
             } else {
-                allScreenshotsCard
-                    .padding(.horizontal, Space.gutter)
+                allScreenshotsRow
 
                 if !model.library.suggestedSmartCollections.isEmpty {
                     SmartSuggestionsSection(zoomNamespace: zoomNamespace)
+                        .padding(.horizontal, -Space.gutter)
                 }
 
-                if !model.library.keptSmartCollections.isEmpty {
-                    keptCollectionsShelf
-                }
-
-                ForEach(groupedShelves, id: \.group) { shelf in
-                    CategoryShelf(group: shelf.group, collections: shelf.collections, zoomNamespace: zoomNamespace)
+                CollectionGrid(collections: gridCollections, zoomNamespace: zoomNamespace) { kind in
+                    if case .smart(let id) = kind { model.deleteSmartCollection(id) }
                 }
             }
         }
+        .padding(.horizontal, Space.gutter)
         .padding(.top, Space.xs)
         .padding(.bottom, Space.xxl)
         .dsAnimation(Motion.snappy, value: model.progress.isIdle)
@@ -140,39 +114,53 @@ struct CollectionsView: View {
         .dsAnimation(Motion.gentle, value: model.library.smartCollections)
     }
 
-    private var heroStats: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            Text(Brand.Copy.Home.greeting())
-                .font(.dsEyebrow)
-                .textCase(.uppercase)
-                .foregroundStyle(Palette.inkSecondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Space.xs) {
-                    StatPill(value: model.library.count, label: Brand.Copy.Home.totalLabel, systemImage: "photo.stack.fill", tint: Palette.brand)
-                    StatPill(value: Int((model.analysisFraction * 100).rounded()), label: Brand.Copy.Home.sortedLabel, systemImage: "wand.and.stars", tint: Palette.keep)
-                    StatPill(value: groupedShelves.reduce(0) { $0 + $1.collections.count }, label: Brand.Copy.Home.stacksLabel, systemImage: "square.stack.3d.up.fill", tint: Palette.brandSecondary)
+    /// At most one thing to do next, so home never stacks banners: apply a suggestion from your own
+    /// correction, else review what was sorted (once the first sort is through, not while it's still moving).
+    @ViewBuilder
+    private var nextStep: some View {
+        if let suggestion = model.propagationSuggestion {
+            PropagationCard(suggestion: suggestion)
+                .transition(.scale(scale: 0.96).combined(with: .opacity))
+        } else if model.showReviewBanner && model.progress.fastRemaining + model.progress.deepRemaining == 0 {
+            ReviewBannerView(
+                unreviewedCount: model.unreviewedCount,
+                isProcessing: false,
+                onReviewTapped: {
+                    HapticManager.shared.lightTap()
+                    showReview = true
+                },
+                onDismiss: {
+                    Motion.perform(Motion.snappy, reduceMotion: reduceMotion) {
+                        model.dismissReviewBanner()
+                    }
                 }
-            }
-            .scrollClipDisabled()
+            )
+            .transition(.scale(scale: 0.96).combined(with: .opacity))
         }
     }
 
-    private var allScreenshotsCard: some View {
+    /// Your kept collections first, then categories in the frozen shelf order (topics before apps)
+    private var gridCollections: [ScreenshotCollection] {
+        let kept = model.library.keptSmartCollections.map { model.library.preview(for: .smart(id: $0.id)) }
+        let categories = model.shelfRanking.shelves(model.library.categoryCollections(sort: model.collectionsSort))
+            .flatMap(\.collections)
+        return kept + categories
+    }
+
+    private var allScreenshotsRow: some View {
         let collection = model.library.preview(for: .all)
         return NavigationLink(value: CollectionKind.all) {
-            HStack(spacing: Space.md) {
-                MosaicThumbnail(screenshots: Array(collection.screenshots.prefix(4)), tint: Palette.brand, size: 84)
+            HStack(spacing: Space.sm) {
+                StackCover(screenshots: Array(collection.screenshots.prefix(3)), tint: Palette.brand, height: 64)
+                    .frame(width: 84)
                     .matchedTransitionSource(id: CollectionKind.all.id, in: zoomNamespace)
-                VStack(alignment: .leading, spacing: Space.xxs) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(Brand.Copy.Home.allScreenshots)
-                        .font(.dsTitle2)
+                        .font(.dsHeadline)
                         .foregroundStyle(Palette.ink)
-                    Text(Brand.Copy.Home.allScreenshotsSubtitle)
-                        .font(.dsCallout)
+                    Text(Brand.screenshots(collection.count))
+                        .font(.dsCaption)
                         .foregroundStyle(Palette.inkSecondary)
-                    Text(collection.count.formatted())
-                        .font(.dsMono)
-                        .foregroundStyle(Palette.brand)
                         .contentTransition(.numericText())
                 }
                 Spacer(minLength: 0)
@@ -180,52 +168,12 @@ struct CollectionsView: View {
                     .font(.dsHeadline)
                     .foregroundStyle(Palette.inkSecondary)
             }
-            .padding(Space.md)
+            .padding(.horizontal, Space.md)
+            .padding(.vertical, Space.xs)
             .dsSurface(radius: Radius.lg, tint: Palette.brand)
         }
         .pressable()
         .accessibilityLabel("\(Brand.Copy.Home.allScreenshots), \(Brand.screenshots(collection.count))")
-    }
-
-    private var keptCollectionsShelf: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            ShelfHeader(title: Brand.Copy.Home.yourCollections, systemImage: "sparkles", tint: Palette.brandSecondary, count: model.library.keptSmartCollections.count)
-                .padding(.horizontal, Space.gutter)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: Space.sm) {
-                    ForEach(model.library.keptSmartCollections) { smart in
-                        let kind = CollectionKind.smart(id: smart.id)
-                        NavigationLink(value: kind) {
-                            CollectionCard(collection: model.library.preview(for: kind), tint: Palette.brandSecondary, zoomNamespace: zoomNamespace)
-                        }
-                        .pressable()
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                model.deleteSmartCollection(smart.id)
-                            } label: {
-                                Label(Brand.Copy.Smart.delete, systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, Space.gutter)
-                .scrollTargetLayout()
-            }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollClipDisabled()
-        }
-    }
-
-    private struct Shelf {
-        let group: CategoryGroup
-        let collections: [ScreenshotCollection]
-    }
-
-    /// In `model.shelfRanking` order, which stays put while sorting runs
-    private var groupedShelves: [Shelf] {
-        model.shelfRanking.shelves(model.library.categoryCollections(sort: model.collectionsSort)).map { shelf in
-            Shelf(group: shelf.group, collections: shelf.collections)
-        }
     }
 
     // MARK: - Toolbar
@@ -279,40 +227,6 @@ struct CollectionsView: View {
     }
 }
 
-// MARK: - Shelf
-
-private struct CategoryShelf: View {
-    let group: CategoryGroup
-    let collections: [ScreenshotCollection]
-    let zoomNamespace: Namespace.ID
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            ShelfHeader(title: group.rawValue, systemImage: group.icon, tint: group.color, count: collections.count)
-                .padding(.horizontal, Space.gutter)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: Space.sm) {
-                    ForEach(collections) { collection in
-                        NavigationLink(value: collection.kind) {
-                            CollectionCard(collection: collection, tint: collection.category.color, zoomNamespace: zoomNamespace)
-                        }
-                        .pressable()
-                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                            content
-                                .scaleEffect(phase.isIdentity ? 1 : 0.94)
-                                .opacity(phase.isIdentity ? 1 : 0.75)
-                        }
-                    }
-                }
-                .padding(.horizontal, Space.gutter)
-                .scrollTargetLayout()
-            }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollClipDisabled()
-        }
-    }
-}
-
 struct ShelfHeader: View {
     let title: String
     let systemImage: String
@@ -343,45 +257,6 @@ struct ShelfHeader: View {
 }
 
 // MARK: - Cards
-
-/// Collection card with a live 2×2 mosaic of its newest screenshots.
-struct CollectionCard: View {
-    let collection: ScreenshotCollection
-    let tint: Color
-    let zoomNamespace: Namespace.ID
-
-    private let width: CGFloat = 156
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            MosaicThumbnail(screenshots: Array(collection.screenshots.prefix(4)), tint: tint, size: width)
-                .overlay(alignment: .topLeading) {
-                    Image(systemName: collection.icon)
-                        .font(.dsCaption)
-                        .foregroundStyle(.white)
-                        .padding(Space.xs)
-                        .background(tint.gradient, in: Circle())
-                        .padding(Space.xs)
-                }
-                .matchedTransitionSource(id: collection.kind.id, in: zoomNamespace)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(collection.title)
-                    .font(.dsHeadline)
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-                Text(Brand.screenshots(collection.count))
-                    .font(.dsCaption)
-                    .foregroundStyle(Palette.inkSecondary)
-                    .contentTransition(.numericText())
-            }
-            .padding(.horizontal, Space.xxs)
-        }
-        .frame(width: width)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(collection.title), \(Brand.screenshots(collection.count))")
-        .accessibilityAddTraits(.isButton)
-    }
-}
 
 /// 2×2 grid of thumbnails (fewer tiles when the collection is small).
 struct MosaicThumbnail: View {

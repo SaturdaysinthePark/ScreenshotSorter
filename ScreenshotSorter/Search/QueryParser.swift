@@ -43,7 +43,7 @@ enum QueryParser {
         "error": .errors, "errors": .errors, "bug": .errors, "crash": .errors,
         "home screen": .iosHomeScreens, "home screens": .iosHomeScreens,
         "dog": .animals, "dogs": .animals, "cat": .animals, "cats": .animals, "pet": .animals, "pets": .animals,
-        "outfit": .clothes, "outfits": .clothes, "sneakers": .shoes, "workout": .exercise, "workouts": .exercise,
+        "outfit": .clothes, "outfits": .clothes, "sneakers": .shoes, "workout": .health, "workouts": .health,
         "song": .music, "songs": .music, "movie": .movies, "movies": .movies, "book": .books,
         "code snippet": .programming, "code": .programming, "article": .news, "articles": .news,
         "map": .directions, "maps": .directions, "event": .events, "invite": .events, "concert": .events

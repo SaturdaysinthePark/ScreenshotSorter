@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Builds the macOS eval harness from the app's own analysis sources and runs it.
 #   Tools/eval/run.sh --corpus build/corpus [--pass fast|deep|both] [--export out.json] [--filter receipts]
+#   Tools/eval/run.sh --corpus build/corpus --pass deep --model   # + Apple's on-device model (text only on macOS 26)
 #   Tools/eval/run.sh --db snap.sqlite [--out rescore.jsonl]   # re-score a real library's stored features
 set -euo pipefail
 root=${0:A:h:h:h}
@@ -19,6 +20,8 @@ sources=(
   $app/Analysis/Rules/*.swift
   $root/Tools/eval/main.swift
   $root/Tools/eval/rescore.swift
+  $root/Tools/eval/model.swift
+  $app/Analysis/FoundationModels/*.swift
 )
 newest=$(ls -t $sources | head -1)
 if [[ ! -x $out/screenshot-eval || $newest -nt $out/screenshot-eval ]]; then

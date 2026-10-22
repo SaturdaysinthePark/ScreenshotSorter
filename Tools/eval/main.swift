@@ -27,6 +27,10 @@ struct Args {
     var filter: String?
     /// Re-score a copy of a library database instead of running images (see rescore.swift)
     var database: String?
+    /// Also run the on-device language model after the deep pass (see model.swift)
+    var model = false
+    /// With --db --model: how many screenshots to send to the model (spread evenly over the library)
+    var limit = 120
     var out: URL?
     var concurrency = max(2, ProcessInfo.processInfo.activeProcessorCount - 2)
 
@@ -44,6 +48,8 @@ struct Args {
             case "--export": export = URL(fileURLWithPath: it.next()!)
             case "--filter": filter = it.next()
             case "--db": database = it.next()
+            case "--model": model = true
+            case "--limit": limit = Int(it.next()!) ?? limit
             case "--out": out = URL(fileURLWithPath: it.next()!)
             case "--jobs": concurrency = Int(it.next()!) ?? concurrency
             default: fatalError("unknown argument \(arg)")
@@ -213,12 +219,25 @@ struct EvalMain {
     static func main() async throws {
         let args = Args()
         if let database = args.database {
-            try runRescore(database: database, out: args.out ?? URL(fileURLWithPath: "build/eval/rescore.jsonl"))
+            try await runRescore(database: database, out: args.out ?? URL(fileURLWithPath: "build/eval/rescore.jsonl"),
+                                 modelSample: args.model ? args.limit : 0)
             return
         }
         let manifestURL = args.corpus.appendingPathComponent("manifest.json")
         var entries = try JSONDecoder().decode([ManifestEntry].self, from: Data(contentsOf: manifestURL))
         if let filter = args.filter { entries = entries.filter { $0.file.contains(filter) || $0.expect.contains(filter) } }
+        // Labels written before categories were merged (beaches → nature, whatsapp → messages…)
+        func current(_ keys: [String]) -> [String] {
+            var seen = Set<String>()
+            return keys.map { ScreenshotCategory(key: $0)?.key ?? $0 }.filter { seen.insert($0).inserted }
+        }
+        entries = entries.map { entry in
+            var entry = entry
+            entry.expect = current(entry.expect)
+            entry.forbid = entry.forbid.map(current)
+            entry.allow = entry.allow.map(current)
+            return entry
+        }
         let unknown = Set(entries.flatMap { $0.expect + ($0.forbid ?? []) + ($0.allow ?? []) }).filter { ScreenshotCategory(key: $0) == nil }
         precondition(unknown.isEmpty, "Unknown category keys in manifest: \(unknown.sorted())")
 
@@ -277,6 +296,19 @@ struct EvalMain {
             report += "\n"
             print(String(format: "[%@] macro-F1 %.3f micro-F1 %.3f exact %.1f%% over %d images in %.1fs",
                          pass.rawValue, metrics.macroF1, metrics.microF1, 100 * Double(metrics.exact) / Double(max(1, metrics.total)), predictions.count, seconds))
+            if args.model && pass == .deep {
+                let (modelPredictions, summary) = try await runModelPass(featuresForExport.sorted { $0.0.file < $1.0.file }, corpus: args.corpus)
+                var fused = Metrics()
+                for p in modelPredictions { fused.add(p) }
+                var rulesOnly = Metrics()
+                let answered = Set(modelPredictions.map(\.file))
+                for p in predictions where answered.contains(p.file) { rulesOnly.add(p) }
+                let line = String(format: "[deep+model] macro-F1 %.3f (rules only on the same %d: %.3f) exact %.1f%% · %@",
+                                  fused.macroF1, modelPredictions.count, rulesOnly.macroF1,
+                                  100 * Double(fused.exact) / Double(max(1, fused.total)), summary)
+                print(line)
+                report += "## deep + language model\n\n- \(line)\n\n"
+            }
             if let export = args.export, pass == .deep || args.passes == [.fast] {
                 try exportGolden(featuresForExport.sorted { $0.0.file < $1.0.file }, to: export)
                 print("exported \(featuresForExport.count) cases to \(export.path)")

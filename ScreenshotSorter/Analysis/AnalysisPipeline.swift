@@ -47,6 +47,8 @@ struct AnalysisPipeline: AnalysisPasses {
         var result: Result
         /// The language model is worth running on this one (queue a model pass)
         var needsModel: Bool = false
+        /// …and ahead of the others: nothing says what it is about yet (`ScreenshotClassifier.needsTopic`)
+        var modelFirst: Bool = false
         /// iCloud-only and downloads aren't allowed right now: park until they are
         var waitingForNetwork: Bool = false
     }
@@ -132,6 +134,7 @@ struct AnalysisPipeline: AnalysisPasses {
         var record = await store.record(id: id) ?? AnalysisRecord(id: id, createdAt: createdAt)
         record.createdAt = createdAt
         var needsModel = false
+        var modelFirst = false
         do {
             let image = try await withTimeout(seconds: AnalysisPipeline.deepTimeout) {
                 try await PhotoImageLoader.loadCGImage(id: id, maxPixel: AnalysisPipeline.deepMaxPixel, allowNetwork: allowDownloads)
@@ -159,6 +162,7 @@ struct AnalysisPipeline: AnalysisPasses {
             let user = await learner.signals(for: id, vectors: vectors)
             let result = ScreenshotClassifier.classify(features: features, insight: insight, user: user, entities: entities)
             apply(result, features: features, insight: insight, to: &record)
+            modelFirst = needsModel && ScreenshotClassifier.needsTopic(result.categories.map(\.category))
             AnalysisPipeline.logDecision("deep", id: id, result)
             record.entities = entities
             record.featurePrint = output.featurePrint
@@ -195,7 +199,7 @@ struct AnalysisPipeline: AnalysisPasses {
             }
         }
         record.analyzedAt = Date()
-        return DeepOutcome(result: .finished(record), needsModel: needsModel)
+        return DeepOutcome(result: .finished(record), needsModel: needsModel, modelFirst: modelFirst)
     }
 
     // MARK: Model
@@ -205,8 +209,9 @@ struct AnalysisPipeline: AnalysisPasses {
     func runModel(id: String) async -> (Result, retryLater: Bool) {
         guard var record = await store.record(id: id), let features = record.features,
               record.fmVersion < PipelineVersion.fm else { return (.skipped, false) }
+        let image = FMClassifier.canSeeImages ? await modelImage(id: id) : nil
         let state = AnalysisPipeline.signposter.beginInterval("languageModel", id: AnalysisPipeline.signposter.makeSignpostID())
-        let outcome = await FMClassifier.shared.insight(for: features, appHint: record.app)
+        let outcome = await FMClassifier.shared.insight(for: features, appHint: record.app, image: image)
         AnalysisPipeline.signposter.endInterval("languageModel", state)
         let insight: ModelInsight?
         switch outcome {
@@ -232,6 +237,18 @@ struct AnalysisPipeline: AnalysisPasses {
         await vectors.upsert(id: id, text: record.embedding, visual: record.featurePrint)
         record.analyzedAt = Date()
         return (.finished(record), false)
+    }
+
+    /// A small copy for the language model: the on-device preview, or a download when Wi-Fi allows.
+    /// Missing is fine — the model then works from the stored text alone.
+    private func modelImage(id: String) async -> CGImage? {
+        let local = await PhotoImageLoader.loadLocalPreview(id: id, maxPixel: FMClassifier.imageMaxPixel,
+                                                            minimumPixel: Int(FMClassifier.imageMaxPixel / 2))
+        if let local { return local }
+        guard NetworkPolicy.shared.allowsICloudDownloads else { return nil }
+        return try? await withTimeout(seconds: AnalysisPipeline.fastDownloadTimeout) {
+            try await PhotoImageLoader.loadCGImage(id: id, maxPixel: FMClassifier.imageMaxPixel, allowNetwork: true)
+        }
     }
 
     // MARK: Rescore

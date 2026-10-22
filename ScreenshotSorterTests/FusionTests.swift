@@ -32,11 +32,11 @@ struct FusionTests {
 
     @Test func missingSourcesAreNeutral() {
         var input = FusionInput()
-        input.vision = [.beaches: 0.85]
-        let withoutText = SignalFusion.fuse(input).first { $0.category == .beaches }?.score ?? 0
+        input.vision = [.nature: 0.85]
+        let withoutText = SignalFusion.fuse(input).first { $0.category == .nature }?.score ?? 0
         input.rules = [:]
         input.model = [:]
-        let stillWithoutText = SignalFusion.fuse(input).first { $0.category == .beaches }?.score ?? 0
+        let stillWithoutText = SignalFusion.fuse(input).first { $0.category == .nature }?.score ?? 0
         #expect(withoutText == stillWithoutText)
     }
 

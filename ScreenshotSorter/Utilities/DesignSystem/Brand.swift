@@ -155,11 +155,11 @@ enum Brand {
         // MARK: Banners
         enum Banners {
             static func reviewTitle(_ count: Int) -> String {
-                "\(Brand.screenshots(count)) waiting for a verdict"
+                "\(count.formatted()) to review"
             }
             static let reviewSubtitle: String = "Keep or toss — takes seconds."
             static let reviewSubtitleProcessing: String = "Still sorting. More may pop in."
-            static let reviewCTA: String = "Start swiping"
+            static let reviewCTA: String = "Review"
             static func unprocessedTitle(_ count: Int) -> String {
                 "\(Brand.screenshots(count)) still unsorted"
             }

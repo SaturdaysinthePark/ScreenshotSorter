@@ -104,6 +104,25 @@ struct SchedulerLaneTests {
         #expect(progress.isIdle && progress.modelCompleted == 30 && progress.deepCompleted == 30)
     }
 
+    @Test func screenshotsWithoutATopicReachTheModelFirst() async throws {
+        if !ResourceGovernor.budget(inBackground: false).useLanguageModel { return }
+        let passes = FakePasses()
+        let scheduler = try makeScheduler(passes, downloads: Flag(true))
+        let plain = (0..<6).map { (id: "plain\($0)", date: Date().addingTimeInterval(Double($0))) }
+        let topicless = (0..<3).map { (id: "feed\($0)", date: Date().addingTimeInterval(-1000 - Double($0))) }
+        // Older and queued later, but they have nothing but an app label
+        await scheduler.enqueueModel(plain)
+        await scheduler.enqueueModel(topicless, first: true)
+        await scheduler.waitUntilDrained()
+        let order = await passes.events.compactMap { event -> String? in
+            if case .modelStart(let id) = event { return id }
+            return nil
+        }
+        #expect(order.count == 9)
+        // The first request may already have started before the topic-less batch arrived
+        #expect(order.dropFirst().prefix(3).allSatisfy { $0.hasPrefix("feed") } || order.prefix(3).allSatisfy { $0.hasPrefix("feed") })
+    }
+
     @Test func iCloudScreenshotsWaitForWiFiThenResume() async throws {
         let passes = FakePasses()
         let downloads = Flag(false)
