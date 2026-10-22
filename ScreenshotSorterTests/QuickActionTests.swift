@@ -78,6 +78,25 @@ struct QuickActionTests {
         #expect(ScreenshotTitle.choose(model: "Koffee Mameya Kakeru", features: features, app: "TikTok") == "Koffee Mameya Kakeru")
     }
 
+    @Test func postsThatSpellOutAVenueOpenItInMaps() {
+        func line(_ text: String, _ y: Double, height: Double = 0.02) -> OCRLine {
+            OCRLine(text: text, confidence: 1, box: CGRect(x: 0.05, y: y, width: 0.6, height: height), zone: .body)
+        }
+        // A venue tag with its area, and a caption naming a venue with its street address
+        let tagged = [line("Georgie's Cafe & Bar • New York", 0.5), line("Discover more", 0.52)]
+        #expect(PlaceCard.mapsQuery(lines: tagged, categories: [.tiktok]) == "Georgie's Cafe & Bar, New York")
+        let caption = [line("The cutest little cafe", 0.5), line("Nuar - 48 W 27th St", 0.6)]
+        #expect(PlaceCard.mapsQuery(lines: caption, categories: [.tiktok, .drinks]) == "Nuar, 48 W 27th St")
+        // Big overlay text is a dish, a product or a list as often as a venue: no guess
+        let overlay = [line("udon shin", 0.3, height: 0.05), line("• Photo", 0.6), line("Tokyo", 0.62),
+                       line("478.0K people posted about this place", 0.64)]
+        #expect(PlaceCard.mapsQuery(lines: overlay, categories: [.tiktok, .food]) == nil)
+        // A Maps card's rating line still wins over the tabs below it; scrolled down, the tabs give the name
+        #expect(PlaceCard.name(in: ["Pocketbook Hudson", "4.3", "Directions", "Apr 25 - 29", "Overview", "Prices"])
+            == "Pocketbook Hudson")
+        #expect(PlaceCard.name(in: ["Embajada de", "OSSO San Isidro", "Overview", "Menu", "Reviews"]) == "OSSO San Isidro")
+    }
+
     @Test func oneTimeCodeWinsEverywhere() {
         let action = QuickAction.suggest(categories: [.notifications], entities: [entity(.url, "bank.com"), entity(.oneTimeCode, "335543")])
         #expect(action?.kind == .copy("335543"))

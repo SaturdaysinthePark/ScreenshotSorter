@@ -124,8 +124,7 @@ func runRescore(database: String, out: URL, modelSample: Int = 0) async throws {
             if total / stride % 20 == 19 { print("  model sample \(total / stride + 1)") }
         }
         let shown = output.categories.map(\.category).filter { $0 != .all }
-        let lineTexts = features.lines.map(\.text)
-        let placeName = PlaceCard.name(in: lineTexts) ?? PlaceCard.taggedVenue(in: lineTexts)
+        let placeName = PlaceCard.mapsQuery(lines: features.lines, categories: Set(shown))
         let quick = QuickAction.suggest(categories: shown, entities: entities, placeName: placeName, text: features.fullText)
         let actionText: String? = quick.map { action in
             switch action.kind {

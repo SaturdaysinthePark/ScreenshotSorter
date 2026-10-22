@@ -39,9 +39,16 @@ struct QuickAction: Equatable, Sendable {
             return QuickAction(title: Brand.Copy.Detail.copyTracking, systemImage: "shippingbox.fill", kind: .copy(value),
                                source: tracking)
         }
-        if let placeName, let url = mapsURL(for: [placeName, first(.address)?.value].compactMap { $0 }.joined(separator: ", ")) {
-            return QuickAction(title: Brand.Copy.Detail.openInMaps, systemImage: "map.fill", kind: .open(url),
-                               source: first(.address))
+        // The card's name plus its address, unless the name line already carries it ("Nuar, 48 W 27th St")
+        if let placeName {
+            var query = placeName
+            if let address = first(.address)?.value, !placeName.localizedCaseInsensitiveContains(address) {
+                query += ", " + address
+            }
+            if let url = mapsURL(for: query) {
+                return QuickAction(title: Brand.Copy.Detail.openInMaps, systemImage: "map.fill", kind: .open(url),
+                                   source: first(.address))
+            }
         }
         // An address, not a name the text tagger spotted: a city in a caption ("Day 6: Tokyo") isn't a place to go
         if !topics.isDisjoint(with: placeCategories),

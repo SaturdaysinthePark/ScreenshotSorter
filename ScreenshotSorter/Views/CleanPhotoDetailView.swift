@@ -1238,9 +1238,10 @@ private struct InsightDrawer: View {
     }
 
     private var quickAction: QuickAction? {
-        let lines: [String] = record?.features?.lines.map(\.text) ?? []
-        return QuickAction.suggest(categories: displayCategories, entities: entities,
-                                   placeName: PlaceCard.name(in: lines) ?? PlaceCard.taggedVenue(in: lines), text: ocrText)
+        let placeName: String? = record?.features.flatMap {
+            PlaceCard.mapsQuery(lines: $0.lines, categories: Set(displayCategories))
+        }
+        return QuickAction.suggest(categories: displayCategories, entities: entities, placeName: placeName, text: ocrText)
     }
 
     private var detailEntities: [ExtractedEntity] {
