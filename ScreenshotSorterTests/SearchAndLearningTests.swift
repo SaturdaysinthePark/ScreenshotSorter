@@ -38,15 +38,43 @@ struct SearchAndLearningTests {
         }
         await store.upsert([record("car", tags: ["car"]), record("card", tags: ["cardholder"]),
                             record("matcha", ocr: "best matcha in kyoto #matcha #tokyo"),
-                            record("once", ocr: "great post, reminds me of matcha")])
+                            record("once", ocr: "great post, reminds me of matcha"),
+                            record("men", tags: ["men's fashion"]), record("man", tags: ["man", "portrait"])])
         let search = SearchService(store: store, vectors: VectorIndex())
         var context = SearchContext()
-        for id in ["car", "card", "matcha", "once"] { context.dates[id] = Date() }
+        for id in ["car", "card", "matcha", "once", "men", "man"] { context.dates[id] = Date() }
+        // "man" and "men" are one collection
+        for name in ["man", "men"] {
+            let found = await search.search(QueryParser.parse(name), context: context, scope: .whatItShows).map(\.id)
+            #expect(Set(found) == ["men", "man"])
+        }
+        #expect(Set(SearchService.wordForms("woman")).isSuperset(of: ["women", "womans"]))
+        #expect(SearchService.wordForms("businessmen").contains("businessman"))
+        #expect(SearchService.wordForms("dress").contains("dresses"))
+        #expect(SearchService.wordForms("party").contains("parties"))
+        #expect(SearchService.occurrences(of: ["child"], in: "the children's menu, kids and children") == 2)
         let cars = await search.search(QueryParser.parse("cars"), context: context, scope: .whatItShows).map(\.id)
         #expect(cars == ["car"])
         let matcha = await search.search(QueryParser.parse("matcha"), context: context, scope: .whatItShows).map(\.id)
         #expect(matcha == ["matcha"])
         #expect(SearchService.occurrences(of: ["matcha"], in: "Best Matcha… #matcha") == 2)
+    }
+
+    @Test func searchFindsCollectionsByName() {
+        func collection(_ kind: CollectionKind, _ title: String, _ count: Int) -> ScreenshotCollection {
+            ScreenshotCollection(kind: kind, title: title, icon: "", screenshots: [], count: count)
+        }
+        let all = [collection(.category(.drinks), ScreenshotCategory.drinks.displayName, 35),
+                   collection(.category(.directions), ScreenshotCategory.directions.displayName, 31),
+                   collection(.smart(id: "trip"), "Japan Trip", 40),
+                   collection(.category(.twitter), ScreenshotCategory.twitter.displayName, 2)]
+        let typed = String(ScreenshotCategory.drinks.displayName.lowercased().prefix(3))
+        #expect(ScreenshotCollection.matching(typed, in: all).first?.kind == .category(.drinks))
+        // A word inside the name, and a category named by a synonym
+        #expect(ScreenshotCollection.matching("trip", in: all).map(\.kind) == [.smart(id: "trip")])
+        let tweets = QueryParser.parse("tweets").categories
+        #expect(ScreenshotCollection.matching("tweets", in: all, categories: tweets).map(\.kind) == [.category(.twitter)])
+        #expect(ScreenshotCollection.matching("d", in: all).isEmpty)
     }
 
     @Test func editDistance() {

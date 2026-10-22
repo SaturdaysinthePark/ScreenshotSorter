@@ -1,6 +1,7 @@
 """Score a library's stored labels against judged truth.
 
     python3 Tools/eval/judge/score.py <truth.json> <analysis.sqlite> [--manifest <corpus dir>]
+    python3 Tools/eval/judge/score.py <truth.json> <rescore.jsonl>      # current rules on the phone's stored features
 
 truth.json: [{"n", "id", "file", "expect": [...], "allow": [...]}] written by the judge (see README).
 Prints per-category precision/recall/F1 of what the app assigned, the worst confusions, and every miss.
@@ -12,14 +13,26 @@ from collections import Counter, defaultdict
 
 truth_path, db_path = sys.argv[1], sys.argv[2]
 truth = json.load(open(truth_path))
-db = sqlite3.connect(db_path)
+rescored = None
+if db_path.endswith(".jsonl"):
+    # `Tools/eval/run.sh --db … --out rescore.jsonl` writes "key=0.59[VR]" labels under 8-character ids
+    rescored = {}
+    for line in open(db_path):
+        r = json.loads(line)
+        parts = [label.replace("=", ":", 1).replace("[", ":").rstrip("]") for label in r["after"]]
+        rescored[r["id"]] = (",".join(parts), "", None)
+else:
+    db = sqlite3.connect(db_path)
 bits = {0: 'V', 1: 'R', 2: 'A', 3: 'B', 4: 'F', 5: 'L', 6: 'M'}
-def sources(v): return ''.join(c for b, c in bits.items() if int(v) & (1 << b))
+def sources(v): return v if rescored is not None else ''.join(c for b, c in bits.items() if int(v) & (1 << b))
 
 tp, fp, fn = Counter(), Counter(), Counter()
 confusions, exact, misses = Counter(), 0, []
 for item in truth:
-    row = db.execute("SELECT categories, title, fm_version FROM assets WHERE id = ?", (item["id"],)).fetchone()
+    if rescored is not None:
+        row = rescored.get(item["id"][:8])
+    else:
+        row = db.execute("SELECT categories, title, fm_version FROM assets WHERE id = ?", (item["id"],)).fetchone()
     if not row:
         continue
     predicted = {}

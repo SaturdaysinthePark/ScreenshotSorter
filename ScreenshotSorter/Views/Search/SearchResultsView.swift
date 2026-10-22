@@ -2,6 +2,9 @@ import SwiftUI
 
 /// Search results: shows how the query was understood, then ranked matches with text snippets.
 struct SearchResultsView: View {
+    /// Home's namespace, so a collection opened from here zooms like one opened from home
+    let collectionNamespace: Namespace.ID
+
     @Environment(AppModel.self) private var model
     @Namespace private var zoomNamespace
     @State private var selection: SearchSelection?
@@ -20,6 +23,11 @@ struct SearchResultsView: View {
             UnderstoodQueryRow(query: model.parsedQuery)
                 .padding(.horizontal, Space.gutter)
 
+            let collections = model.searchCollections
+            if !collections.isEmpty {
+                MatchingCollectionsRow(collections: collections, zoomNamespace: collectionNamespace)
+            }
+
             if model.isSearchRunning && results.isEmpty {
                 HStack(spacing: Space.xs) {
                     ProgressView()
@@ -30,8 +38,10 @@ struct SearchResultsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, Space.xl)
             } else if results.isEmpty {
-                NoResultsView()
-                    .padding(.top, Space.xl)
+                if collections.isEmpty {
+                    NoResultsView()
+                        .padding(.top, Space.xl)
+                }
             } else {
                 Text(Brand.Copy.Search.resultCount(results.count))
                     .font(.dsCaption)
@@ -64,6 +74,39 @@ struct SearchResultsView: View {
                 onCurrentChange: { id in currentID = id }
             )
             .navigationTransition(.zoom(sourceID: currentID ?? item.id, in: zoomNamespace))
+        }
+    }
+}
+
+/// Collections whose name matches, as a row of tiles that open the collection
+private struct MatchingCollectionsRow: View {
+    let collections: [ScreenshotCollection]
+    let zoomNamespace: Namespace.ID
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text(Brand.Copy.Search.collectionsTitle)
+                .font(.dsHeadline)
+                .foregroundStyle(Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, Space.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: Space.sm) {
+                    ForEach(collections) { collection in
+                        NavigationLink(value: collection.kind) {
+                            CollectionTile(collection: collection, newCount: model.newCount(for: collection.kind),
+                                           zoomNamespace: zoomNamespace)
+                                .frame(width: dynamicTypeSize.isAccessibilitySize ? 220 : 150)
+                        }
+                        .pressable()
+                    }
+                }
+                .padding(.horizontal, Space.gutter)
+            }
+            .scrollClipDisabled()
         }
     }
 }

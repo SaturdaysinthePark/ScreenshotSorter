@@ -81,6 +81,12 @@ struct FusionConfig: Sendable {
     /// "People" without a detected face (someone in a TikTok video, an ad model, diners behind a restaurant card)
     /// needs this much when it is not the screenshot's only subject: as a second topic or inside an app.
     var visionOnlyPeopleThreshold: Double = 0.75
+    /// A second topic backed by one source only (a word in a caption or an ad, an object in the background, the
+    /// model's guess) was right 10 times in 45 on a judged real library; corroborated ones were right ~9 in 10
+    var singleSourceSecondaryThreshold: Double = 0.8
+    /// Plants and landscapes seen only by the image classifier inside an app's post are mostly the background of a
+    /// café, a street or a book photo (1 right in 12 on a judged library)
+    var visionOnlySceneInAppThreshold: Double = 0.7
     /// Reliability of neighbour-propagated user corrections
     var knnReliability: Double = 0.9
     /// How strongly negative neighbour evidence suppresses a category
@@ -130,9 +136,11 @@ enum SignalFusion {
         let symbologies = input.barcodes.map { $0.symbology.lowercased() }
         // Boarding passes / event tickets use Aztec & PDF417; everything else counts as a scannable code
         let ticketCodes = symbologies.filter { $0.contains("aztec") || $0.contains("pdf417") }
+        // A book's ISBN or a product's UPC is printed on the thing, not a code anyone saves a screenshot for
+        let productCodes = symbologies.filter { $0.contains("ean") || $0.contains("upc") }
         if symbologies.contains(where: { $0.contains("qr") }) {
             evidence[.codes, default: [:]][.barcode] = 0.95
-        } else if symbologies.count > ticketCodes.count {
+        } else if symbologies.count > ticketCodes.count + productCodes.count {
             evidence[.codes, default: [:]][.barcode] = 0.75
         }
         if !ticketCodes.isEmpty {
@@ -198,6 +206,39 @@ enum SignalFusion {
                 }
                 return index <= firstTopic || item.category.kind != .mixed || item.score >= config.visionOnlySecondaryThreshold
             }.map(\.element)
+        }
+        if selected.contains(where: { $0.category.kind == .app }) {
+            selected.removeAll { item in
+                (item.category == .plants || item.category == .nature) && item.sources == .visionClassifier
+                    && item.score < config.visionOnlySceneInAppThreshold
+            }
+        }
+        // Someone in the picture isn't what it's about (a creator talking, a model in an ad, an artist on a song
+        // page): inside an app People needs a face and no other topic; elsewhere a topic the text names wins.
+        if let people = selected.first(where: { $0.category == .people }), !people.sources.contains(.user) {
+            let inApp = selected.contains { $0.category.kind == .app }
+            let topics = selected.filter { $0.category.kind != .app && $0.category != .people }
+            let named = topics.contains { !$0.sources.isDisjoint(with: [.ocrRules, .foundationModel, .appDetector, .barcode]) }
+            if inApp ? (!people.sources.contains(.faces) || !topics.isEmpty) : named {
+                selected.removeAll { $0.category == .people }
+            }
+        }
+        // Clothes worn by the person a photo is of don't make it a fashion post
+        if let people = selected.first(where: { $0.category == .people }),
+           let clothes = selected.first(where: { $0.category == .clothes }),
+           clothes.sources == .visionClassifier, people.score >= clothes.score {
+            selected.removeAll { $0.category == .clothes }
+        }
+        if let firstTopic = selected.first(where: { $0.category.kind != .app })?.category {
+            let evidenceSources: [LabelSource] = [.visionClassifier, .ocrRules, .barcode, .faces, .foundationModel]
+            selected.removeAll { item in
+                guard item.category != firstTopic, item.category.kind != .app,
+                      item.sources.isDisjoint(with: [.user, .userKNN, .appDetector]) else { return false }
+                // A shop's product page is both: the shop read from the page, the product seen in the photo
+                let pair: Set<ScreenshotCategory> = [item.category, firstTopic]
+                if pair.contains(.stores), !pair.isDisjoint(with: ScreenshotClassifier.productCategories) { return false }
+                return evidenceSources.filter(item.sources.contains).count == 1 && item.score < config.singleSourceSecondaryThreshold
+            }
         }
         if selected.count > config.maxCategories {
             selected = Array(selected.prefix(config.maxCategories))

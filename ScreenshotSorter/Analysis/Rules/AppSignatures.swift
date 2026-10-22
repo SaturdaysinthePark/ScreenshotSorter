@@ -157,7 +157,8 @@ enum AppSignatures {
     static let entertainment: [AppSignature] = [
         AppSignature(appID: "spotify", displayName: "Spotify", category: .music,
                      names: ["spotify"], hosts: ["open.spotify.com"],
-                     phrases: ["liked songs": 0.85, "your library": 0.4]),
+                     phrases: ["liked songs": 0.85],
+                     chrome: [.zoneAllOf(.bottomBar, ["home", "search", "your library"], weight: 0.85)]),
         AppSignature(appID: "applemusic", displayName: "Apple Music", category: .music,
                      phrases: ["apple music": 0.8],
                      chrome: [.zoneAllOf(.bottomBar, ["listen now", "radio", "library"], weight: 0.9)]),

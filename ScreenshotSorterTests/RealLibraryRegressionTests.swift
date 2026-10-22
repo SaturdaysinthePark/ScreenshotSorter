@@ -155,4 +155,77 @@ struct RealLibraryRegressionTests {
                                                                               ScreenshotCategory.food.group,
                                                                               ScreenshotCategory.tiktok.group])
     }
+
+    // MARK: Found judging every shelf of a real library (12 random members each)
+
+    private let tiktok = AppMatch(appID: "tiktok", displayName: "TikTok", category: .tiktok, confidence: 0.95)
+
+    @Test func someoneInTheFrameIsNotPeople() {
+        // A creator talking about a market, an artist on a song page
+        var post = FusionInput()
+        post.apps = [tiktok]
+        post.vision = [.people: 0.85]
+        post.faces = FaceStats(count: 1, largestAreaFraction: 0.15, totalAreaFraction: 0.15)
+        post.rules = [.places: 0.8]
+        #expect(!SignalFusion.fuse(post).map(\.category).contains(.people))
+        var songPage = FusionInput()
+        songPage.vision = [.people: 0.85]
+        songPage.faces = post.faces
+        songPage.rules = [.music: 0.9]
+        #expect(!SignalFusion.fuse(songPage).map(\.category).contains(.people))
+        // A selfie is: and the clothes worn in it don't make it a fashion post
+        var selfie = FusionInput()
+        selfie.vision = [.people: 0.9, .clothes: 0.7]
+        selfie.faces = FaceStats(count: 1, largestAreaFraction: 0.3, totalAreaFraction: 0.3)
+        #expect(SignalFusion.fuse(selfie).map(\.category) == [.people])
+    }
+
+    @Test func secondTopicNeedsTwoKindsOfEvidence() {
+        var post = FusionInput()
+        post.rules = [.books: 0.9, .drinks: 0.7]
+        let one = SignalFusion.fuse(post).map(\.category)
+        #expect(one.contains(.books) && !one.contains(.drinks))
+        post.vision = [.drinks: 0.6]
+        #expect(SignalFusion.fuse(post).map(\.category).contains(.drinks))
+    }
+
+    @Test func backgroundPlantsInAFeedPostAreNotPlants() {
+        var cafe = FusionInput()
+        cafe.apps = [tiktok]
+        cafe.vision = [.plants: 0.65]
+        #expect(!SignalFusion.fuse(cafe).map(\.category).contains(.plants))
+        cafe.vision = [.plants: 0.85]
+        #expect(SignalFusion.fuse(cafe).map(\.category).contains(.plants))
+    }
+
+    @Test func productBarcodesAreNotCodes() {
+        var book = FusionInput()
+        book.barcodes = [BarcodeInfo(payload: "9780374534202", symbology: "VNBarcodeSymbologyEAN13")]
+        #expect(!SignalFusion.fuse(book).map(\.category).contains(.codes))
+        book.barcodes = [BarcodeInfo(payload: "https://example.com", symbology: "VNBarcodeSymbologyQR")]
+        #expect(SignalFusion.fuse(book).map(\.category).contains(.codes))
+    }
+
+    @Test func genericWordsDontLabelOnTheirOwn() {
+        // A captive Wi-Fi sheet, a post about a bug, a history book page, a place card's Directions button
+        #expect(!labels(screen(["Free Wi-Fi", "Airport guest network", "Email address", "Connect"])).contains(.settings))
+        #expect(!labels(screen(["r/ClaudeAI", "Found a bug: the search plugin has an issue", "Same problem here"])).contains(.errors))
+        #expect(!labels(screen(["Shinto in the Ancient Period", "officials said the government", "according to the record"]))
+            .contains(.news))
+        #expect(!labels(screen(["Wo Hop", "4.3", "Chinese restaurant", "Directions", "17 Mott St", "12 min"])).contains(.directions))
+        #expect(labels(screen(["0.4 mi", "Kebo St", "25", "mph", "Spring St"])).contains(.directions))
+        #expect(!labels(screen(["things to do in kyoto", "Notes", "Remember me"])).contains(.notes))
+        #expect(!labels(screen(["Following", "For You", "ramen spot", "Home", "Friends", "Inbox", "Profile"])).contains(.email))
+        #expect(!labels(screen(["Your cart", "Subtotal $89", "Promo code", "Checkout"])).contains(.receipts))
+        #expect(!labels(screen(["Carrom board", "$129", "Estimated delivery Oct 3", "Free shipping", "Add to cart"])).contains(.orders))
+        #expect(labels(screen(["Balcony • Row H", "$123 each incl. fees", "1-5 tickets"])).contains(.tickets))
+    }
+
+    @Test func modelCantAddWhatTheRulesRuleOut() {
+        let film = screen(["Fujifilm Camera", "My favorite film simulations", "Recipes Kodak Portra 400",
+                           "Grain effect: strong", "Dynamic range: DR400"])
+        let insight = ModelInsight(primary: .recipes, secondary: [], confidence: 0.9, app: nil, title: "", summary: "",
+                                   tags: [], sawImage: true)
+        #expect(!labels(film, insight: insight).contains(.recipes))
+    }
 }

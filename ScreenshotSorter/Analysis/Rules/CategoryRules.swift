@@ -34,7 +34,7 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .codes,
-            strong: ["scan this code": 0.85, "scan the qr": 0.85, "qr code": 0.8, "scan to pay": 0.85,
+            strong: ["scan this code": 0.85, "scan the qr": 0.85, "qr code": 0.45, "scan to pay": 0.85,
                      "scan me": 0.7, "barcode": 0.6],
             weak: ["scan": 0.3, "qr": 0.35]
         ),
@@ -43,10 +43,13 @@ enum CategoryRules {
             strong: ["boarding pass": 0.92, "admit one": 0.9, "e-ticket": 0.85, "eticket": 0.85,
                      "mobile ticket": 0.85, "general admission": 0.8, "section row seat": 0.85,
                      "your tickets": 0.75, "ticketmaster": 0.85, "add to apple wallet": 0.85,
-                     "add to wallet": 0.7, "zone": 0.15, "seat": 0.3],
-            weak: ["gate": 0.3, "row": 0.25, "section": 0.2, "entry": 0.2, "admission": 0.3,
+                     "add to wallet": 0.7],
+            weak: ["gate": 0.3, "row": 0.25, "section": 0.2, "entry": 0.2, "admission": 0.3, "zone": 0.15, "seat": 0.3,
                    "ticket": 0.35, "boarding": 0.35, "group": 0.1],
-            patterns: [.allOf(["row", "seat"], weight: 0.65), .allOf(["gate", "seat"], weight: 0.6)]
+            // Resale listings: "Balcony • Row H · $123 each incl. fees", "4 tickets · Price includes fees"
+            patterns: [.allOf(["row", "seat"], weight: 0.65), .allOf(["gate", "seat"], weight: 0.6),
+                       .allOf(["row", "tickets"], weight: 0.6), .allOf(["tickets", "fees"], weight: 0.6)],
+            minWeakHits: 99
         )
     ]
 
@@ -55,7 +58,7 @@ enum CategoryRules {
     static let work: [CategoryRule] = [
         CategoryRule(
             category: .receipts,
-            strong: ["receipt": 0.8, "subtotal": 0.8, "order total": 0.8, "amount paid": 0.8,
+            strong: ["receipt": 0.8, "subtotal": 0.5, "order total": 0.8, "amount paid": 0.8,
                      "payment received": 0.75, "invoice": 0.75, "transaction id": 0.7, "tip": 0.2,
                      "thank you for your purchase": 0.85, "thank you for your order": 0.7,
                      "sales tax": 0.75, "change due": 0.85, "cash": 0.2],
@@ -63,7 +66,8 @@ enum CategoryRules {
                    "amex": 0.2, "qty": 0.3, "item": 0.15, "balance": 0.15],
             // A page of prices is as often a shop's catalogue as a bill: it only adds to other receipt cues
             patterns: [.priceCount(min: 4, weight: 0.3), .allOf(["subtotal", "total"], weight: 0.6)],
-            negative: ["add to cart", "add to bag", "buy now"]
+            // A cart or checkout comes before paying
+            negative: ["add to cart", "add to bag", "buy now", "place order", "checkout", "gift receipt", "promo code"]
         ),
         CategoryRule(
             category: .documents,
@@ -72,14 +76,18 @@ enum CategoryRules {
                      "hereby": 0.6, "pursuant": 0.7, "docusign": 0.85, "lease": 0.45, "contract": 0.45],
             weak: ["document": 0.3, "page": 0.15, "appendix": 0.3, "references": 0.25,
                    "policy": 0.2, "form": 0.15, "date": 0.05, "name": 0.05],
-            patterns: [.textDensity(min: 0.35, weight: 0.35), .lineCount(min: 30, weight: 0.25)],
-            negative: ["likes", "retweets", "reply", "comments"]
+            negative: ["likes", "retweets", "reply", "comments"],
+            // Dense text is every article, book page and caption: weak words only add to a document cue
+            minWeakHits: 99
         ),
         CategoryRule(
             category: .notes,
-            strong: ["to do": 0.5, "todo": 0.55, "checklist": 0.6, "shopping list": 0.8, "grocery list": 0.85,
-                     "new note": 0.8, "notes": 0.35],
-            weak: ["reminders": 0.25, "list": 0.2, "remember": 0.25, "buy": 0.15, "ideas": 0.25, "done": 0.15]
+            strong: ["todo": 0.55, "checklist": 0.6, "shopping list": 0.8, "grocery list": 0.85, "new note": 0.8],
+            // "things to do", "Remember me", "Add to Notes" buttons
+            weak: ["to do": 0.3, "notes": 0.25, "reminders": 0.25, "list": 0.2, "remember": 0.25, "buy": 0.15,
+                   "ideas": 0.25, "done": 0.15],
+            negative: ["add to your grocery list", "add to grocery list", "add to notes"],
+            minWeakHits: 99
         ),
         CategoryRule(
             category: .programming,
@@ -132,10 +140,13 @@ enum CategoryRules {
         CategoryRule(
             category: .orders,
             strong: ["order confirmed": 0.85, "order number": 0.7, "tracking number": 0.85,
-                     "out for delivery": 0.9, "has shipped": 0.85, "your order": 0.6, "estimated delivery": 0.85,
-                     "arriving": 0.5, "delivered": 0.45, "track package": 0.9, "shipment": 0.4, "ups": 0.4,
-                     "fedex": 0.6, "usps": 0.6, "dhl": 0.6],
-            weak: ["order": 0.25, "shipping": 0.25, "package": 0.3, "delivery": 0.25, "carrier": 0.3]
+                     "out for delivery": 0.9, "has shipped": 0.85, "your order": 0.35, "estimated delivery": 0.5,
+                     "track package": 0.9, "shipment": 0.4],
+            // Carriers and "delivery" are on every product page, a UPS Store pin and "give-ups"
+            weak: ["order": 0.25, "shipping": 0.25, "package": 0.3, "delivery": 0.25, "carrier": 0.3, "arriving": 0.3,
+                   "delivered": 0.3, "ups": 0.2, "fedex": 0.3, "usps": 0.3, "dhl": 0.3],
+            negative: ["add to cart", "add to bag", "buy now", "off your order", "free shipping"],
+            minWeakHits: 99
         ),
         CategoryRule(
             category: .places,
@@ -175,12 +186,13 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .music,
-            strong: ["spotify": 0.8, "apple music": 0.8, "now playing": 0.7, "liked songs": 0.85, "playlist": 0.6,
+            strong: ["spotify": 0.8, "apple music": 0.8, "now playing": 0.7, "liked songs": 0.85,
                      "album": 0.5, "lyrics": 0.6, "shazam": 0.85, "soundcloud": 0.85, "tidal": 0.5,
                      "monthly listeners": 0.9, "add to library": 0.4, "discover weekly": 0.9, "release radar": 0.9,
-                     "daily mix": 0.8, "made for": 0.3, "your library": 0.45, "up next": 0.3, "concerts near you": 0.8],
+                     "daily mix": 0.8, "made for": 0.3, "up next": 0.3, "concerts near you": 0.8],
+            // TikTok's "Playlist • <name>" is a creator's list of videos, and "your library" is everyone's word
             weak: ["song": 0.3, "songs": 0.3, "artist": 0.2, "track": 0.2, "listen": 0.25, "single": 0.1, "ep": 0.1,
-                   "tour": 0.2, "lyrics": 0.2]
+                   "tour": 0.2, "lyrics": 0.2, "playlist": 0.25, "your library": 0.25]
         ),
         CategoryRule(
             category: .videoGames,
@@ -224,13 +236,19 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .directions,
-            // "Directions" alone is also a button on every place card
-            strong: ["directions": 0.4, "turn left": 0.85, "turn right": 0.85, "continue straight": 0.85, "add stop": 0.8,
-                     "fastest route": 0.85, "arrival time": 0.5, "eta": 0.5, "min drive": 0.8, "min walk": 0.7,
-                     "get directions": 0.8, "route": 0.35, "transit": 0.4, "miles": 0.15, "your location": 0.6,
-                     "avoid tolls": 0.7, "toll": 0.3, "steps": 0.15, "walk": 0.2],
-            weak: ["mi": 0.2, "km": 0.2, "min": 0.1, "exit": 0.2, "head north": 0.5, "head south": 0.5,
-                   "street": 0.1, "ave": 0.1, "st": 0.05]
+            strong: ["turn left": 0.85, "turn right": 0.85, "continue straight": 0.85, "add stop": 0.8,
+                     "fastest route": 0.85, "arrival time": 0.5, "min drive": 0.8, "min walk": 0.7,
+                     "your location": 0.6, "avoid tolls": 0.7, "head north": 0.5, "head south": 0.5, "end route": 0.85],
+            // "Directions" is a button on every place card and an email's "get directions" link; streets and
+            // minutes are on every address: they only support a route
+            weak: ["directions": 0.3, "get directions": 0.3, "eta": 0.3, "route": 0.3, "transit": 0.3, "miles": 0.15,
+                   "toll": 0.3, "steps": 0.15, "walk": 0.2, "mi": 0.2, "km": 0.2, "min": 0.1, "exit": 0.2,
+                   "street": 0.1, "ave": 0.1, "st": 0.05],
+            // Turn-by-turn (distance to the next turn and the speed limit), a route summary, Maps' route sheet
+            patterns: [.allOf(["mi", "mph"], weight: 0.7), .allOf(["km", "km/h"], weight: 0.7),
+                       .allOf(["arrival", "min", "mi"], weight: 0.7), .allOf(["arrival", "min", "km"], weight: 0.7),
+                       .allOf(["directions", "avoid"], weight: 0.75), .allOf(["directions", "prefer"], weight: 0.7)],
+            minWeakHits: 99
         ),
         CategoryRule(
             category: .places,
@@ -257,9 +275,10 @@ enum CategoryRules {
         CategoryRule(
             category: .homes,
             strong: ["zillow": 0.85, "redfin": 0.85, "for rent": 0.55, "sq ft": 0.75, "sqft": 0.75,
-                     "bedrooms": 0.6, "bathrooms": 0.5, "beds baths": 0.7, "open house": 0.8,
+                     "bedrooms": 0.35, "bathrooms": 0.35, "beds baths": 0.7, "open house": 0.4,
                      "apartments.com": 0.85, "streeteasy": 0.85, "per month": 0.25],
-            weak: ["for sale": 0.25, "listing": 0.25, "bed": 0.15, "bath": 0.2, "rent": 0.25, "lease": 0.2, "home": 0.1, "apartment": 0.3]
+            weak: ["for sale": 0.25, "listing": 0.25, "bed": 0.15, "bath": 0.2, "rent": 0.25, "lease": 0.2, "home": 0.1, "apartment": 0.3],
+            minWeakHits: 99
         )
     ]
 
@@ -269,9 +288,12 @@ enum CategoryRules {
         CategoryRule(
             category: .health,
             strong: ["heart rate": 0.85, "resting heart rate": 0.9, "blood pressure": 0.85, "sleep score": 0.85,
-                     "calories": 0.4, "steps": 0.35, "apple health": 0.85, "prescription": 0.75, "pharmacy": 0.6,
-                     "appointment": 0.3, "dosage": 0.75, "symptoms": 0.55, "mychart": 0.9, "bpm": 0.6],
-            weak: ["sleep": 0.2, "health": 0.25, "doctor": 0.3, "medical": 0.3, "patient": 0.3, "mg": 0.2]
+                     "calories": 0.4, "apple health": 0.85, "prescription": 0.7, "pharmacy": 0.4,
+                     "appointment": 0.3, "dosage": 0.75, "symptoms": 0.55, "mychart": 0.9],
+            // A song's tempo, a joke workout book, a doctor in a novel
+            weak: ["steps": 0.25, "bpm": 0.3, "sleep": 0.2, "health": 0.25, "doctor": 0.3, "medical": 0.3, "patient": 0.3,
+                   "mg": 0.2, "workout": 0.25, "strength": 0.15],
+            minWeakHits: 99
         ),
         CategoryRule(
             category: .health,
@@ -284,11 +306,11 @@ enum CategoryRules {
         CategoryRule(
             category: .sports,
             strong: ["espn": 0.8, "final score": 0.75, "box score": 0.85, "standings": 0.6, "playoffs": 0.65,
-                     "nba": 0.75, "nfl": 0.75, "mlb": 0.75, "nhl": 0.75, "premier league": 0.8, "fantasy": 0.4,
+                     "nba": 0.75, "nfl": 0.75, "mlb": 0.75, "nhl": 0.75, "premier league": 0.8, "fantasy football": 0.75,
                      "touchdown": 0.8, "quarter": 0.2, "halftime": 0.7, "championship": 0.5, "matchup": 0.45,
                      "win probability": 0.6, "scoreboard": 0.7, "fixtures": 0.5],
             weak: ["game": 0.15, "team": 0.2, "score": 0.2, "vs": 0.2, "season": 0.15, "league": 0.3,
-                   "player": 0.15, "win": 0.1, "match": 0.15]
+                   "player": 0.15, "win": 0.1, "match": 0.15, "fantasy": 0.2]
         ),
         CategoryRule(
             category: .recipes,
@@ -298,7 +320,8 @@ enum CategoryRules {
             weak: ["cup": 0.15, "cups": 0.2, "oz": 0.15, "bake": 0.3, "stir": 0.3, "mix": 0.2, "minutes": 0.05,
                    "salt": 0.2, "pepper": 0.15, "garlic": 0.25, "butter": 0.25, "sugar": 0.2],
             // Fujifilm's film-simulation "recipes" are camera settings
-            negative: ["film simulation", "fujifilm", "grain effect", "dynamic range"]
+            negative: ["film simulation", "film sim", "film recipe", "filmsimulation", "simulation", "fujifilm", "fuji",
+                       "grain effect", "dynamic range", "color chrome"]
         ),
         CategoryRule(
             category: .recipes,
@@ -322,9 +345,13 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .drinks,
-            strong: ["cocktail": 0.6, "espresso": 0.55, "latte": 0.55, "starbucks": 0.6, "wine list": 0.8,
-                     "happy hour": 0.6, "brewery": 0.65, "matcha": 0.5, "boba": 0.6],
-            weak: ["coffee": 0.3, "tea": 0.2, "beer": 0.3, "wine": 0.3, "drink": 0.25, "drinks": 0.25, "bar": 0.1]
+            strong: ["cocktail": 0.6, "espresso": 0.55, "latte": 0.55, "wine list": 0.8, "happy hour": 0.6, "brewery": 0.65,
+                     "matcha": 0.5, "boba": 0.6],
+            // A brand in an ad on a book page, "tea" and "bar" on a meme map: everyday words never label drinks alone.
+            // A coffee shop is a place (`.places`); drinks is the drink itself
+            weak: ["coffee": 0.3, "tea": 0.2, "beer": 0.3, "wine": 0.3, "drink": 0.25, "drinks": 0.25, "bar": 0.1,
+                   "starbucks": 0.3],
+            minWeakHits: 99
         )
     ]
 
@@ -333,15 +360,16 @@ enum CategoryRules {
     static let information: [CategoryRule] = [
         CategoryRule(
             category: .news,
-            strong: ["breaking news": 0.85, "breaking": 0.4, "reuters": 0.85, "associated press": 0.85,
-                     "new york times": 0.75, "the guardian": 0.75, "bbc news": 0.85, "cnn": 0.7, "washington post": 0.8,
+            strong: ["breaking news": 0.85, "reuters": 0.85, "associated press": 0.85,
+                     "new york times": 0.4, "the guardian": 0.75, "bbc news": 0.85, "cnn": 0.7, "washington post": 0.8,
                      "bloomberg": 0.6, "subscribe to read": 0.7, "min read": 0.55, "updated": 0.15, "opinion": 0.3,
-                     "apple news": 0.85, "reporting": 0.3, "correspondent": 0.6],
+                     "apple news": 0.85, "correspondent": 0.6],
+            // Prose says "said" and "officials" (a history book, "OFFICIAL TAB"); they only support a news cue
             weak: ["news": 0.3, "according": 0.2, "said": 0.1, "officials": 0.3, "report": 0.2, "article": 0.3,
-                   "published": 0.25, "government": 0.2, "president": 0.2],
-            patterns: [.lineCount(min: 18, weight: 0.1)],
+                   "published": 0.25, "government": 0.2, "president": 0.2, "reporting": 0.2, "breaking": 0.2],
             // Wikipedia's "Article | Talk" tabs are not journalism; "New York Times bestselling author" is a book cover
-            negative: ["wikipedia", "bestselling", "bestseller"]
+            negative: ["wikipedia", "bestselling", "bestseller"],
+            minWeakHits: 99
         ),
         CategoryRule(
             category: .quotes,
@@ -360,10 +388,12 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .aiChats,
-            strong: ["chatgpt": 0.45, "message chatgpt": 0.95, "ask anything": 0.6, "claude": 0.5,
-                     "reply to claude": 0.95, "how can i help you today": 0.75, "gemini": 0.4, "ask gemini": 0.9,
-                     "perplexity": 0.7, "copilot": 0.5, "can make mistakes": 0.85, "regenerate": 0.6, "new chat": 0.5],
-            weak: ["prompt": 0.25, "model": 0.1, "ai": 0.2, "assistant": 0.2, "generate": 0.2]
+            strong: ["message chatgpt": 0.95, "ask anything": 0.6, "reply to claude": 0.95, "how can i help you today": 0.75,
+                     "ask gemini": 0.9, "can make mistakes": 0.85, "regenerate": 0.6, "new chat": 0.5],
+            // A post or thread about an assistant names it as often as a chat with one does
+            weak: ["chatgpt": 0.35, "claude": 0.35, "gemini": 0.3, "perplexity": 0.35, "copilot": 0.3, "prompt": 0.25,
+                   "model": 0.1, "ai": 0.2, "assistant": 0.2, "generate": 0.2],
+            minWeakHits: 99
         )
     ]
 
@@ -372,8 +402,8 @@ enum CategoryRules {
     static let system: [CategoryRule] = [
         CategoryRule(
             category: .notifications,
-            strong: ["notification center": 0.9, "notifications": 0.4, "now": 0.1, "clear all": 0.4, "show less": 0.3],
-            weak: ["ago": 0.15, "min ago": 0.3, "options": 0.1],
+            strong: ["notification center": 0.9, "now": 0.1, "clear all": 0.4, "show less": 0.3],
+            weak: ["notifications": 0.25, "ago": 0.15, "min ago": 0.3, "options": 0.1],
             patterns: [.countOf(["now", "1m ago", "2m ago", "5m ago", "yesterday", "min ago", "hours ago"], min: 3, weight: 0.55),
                        .relativeTimeCount(min: 2, weight: 0.7), .lockScreenDate(weight: 0.6)]
         ),
@@ -389,25 +419,29 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .settings,
-            strong: ["wi-fi": 0.4, "bluetooth": 0.35, "cellular": 0.35, "privacy & security": 0.75,
+            // "Wi-Fi" alone is a hotel or airport login sheet; Settings shows it next to Bluetooth and Cellular
+            strong: ["bluetooth": 0.35, "cellular": 0.35, "privacy & security": 0.75,
                      "screen time": 0.6, "general": 0.15, "software update": 0.75, "airplane mode": 0.75,
                      "display & brightness": 0.85, "notifications": 0.15, "control center": 0.5,
                      "focus": 0.15, "battery health": 0.8, "storage": 0.2],
-            weak: ["settings": 0.3, "on": 0.02, "off": 0.02, "allow": 0.15, "enable": 0.2, "toggle": 0.2],
+            weak: ["wi-fi": 0.25, "settings": 0.3, "on": 0.02, "off": 0.02, "allow": 0.15, "enable": 0.2, "toggle": 0.2],
             patterns: [.countOf(["wi-fi", "bluetooth", "cellular", "general", "notifications", "sounds & haptics",
                                  "focus", "screen time", "privacy & security", "battery", "display & brightness",
                                  "accessibility", "wallpaper"], min: 3, weight: 0.85)]
         ),
         CategoryRule(
             category: .errors,
-            strong: ["something went wrong": 0.9, "an error occurred": 0.9, "error": 0.35, "failed to": 0.6,
+            strong: ["something went wrong": 0.9, "an error occurred": 0.9, "failed to": 0.6,
                      "try again": 0.35, "not found": 0.4, "error 404": 0.85, "404 error": 0.85,
                      "didn't find anything": 0.6, "page doesn't exist": 0.8, "500 internal server error": 0.95,
                      "unexpected error": 0.9, "unable to": 0.45, "crash": 0.5,
                      "cannot connect": 0.7, "no internet connection": 0.85, "access denied": 0.75,
                      "can't open the page": 0.9, "server can't be found": 0.85, "can't be found": 0.5,
                      "not connected to the internet": 0.9, "page not found": 0.85],
-            weak: ["404": 0.25, "exception": 0.25, "failed": 0.25, "problem": 0.2, "issue": 0.15, "bug": 0.35, "retry": 0.3, "oops": 0.4]
+            // A post about a bug, or 404 reactions, isn't an error screen: these only support an error message
+            weak: ["error": 0.35, "404": 0.25, "exception": 0.25, "failed": 0.25, "problem": 0.2, "issue": 0.15, "bug": 0.35,
+                   "retry": 0.3, "oops": 0.4],
+            minWeakHits: 99
         )
     ]
 
@@ -536,12 +570,14 @@ enum CategoryRules {
     static let communication: [CategoryRule] = [
         CategoryRule(
             category: .email,
-            strong: ["reply all": 0.75, "unsubscribe": 0.55, "sent from my iphone": 0.85, "inbox": 0.5,
-                     "forward": 0.15, "to me": 0.4, "cc": 0.2],
-            weak: ["from": 0.1, "to": 0.02, "reply": 0.15, "sent": 0.15, "draft": 0.25, "archive": 0.2],
+            strong: ["reply all": 0.75, "unsubscribe": 0.55, "sent from my iphone": 0.85, "to me": 0.4],
+            // "Inbox" is a tab in TikTok, Instagram and Reddit clients
+            weak: ["inbox": 0.3, "forward": 0.15, "cc": 0.2, "from": 0.1, "to": 0.02, "reply": 0.15, "sent": 0.15,
+                   "draft": 0.25, "archive": 0.2],
             patterns: [.allOf(["from", "to", "subject"], weight: 0.7)],
             // TikTok's and Instagram's tab bars have an "Inbox" too
-            negative: ["for you", "following", "followers"]
+            negative: ["for you", "following", "followers"],
+            minWeakHits: 99
         )
     ]
 }

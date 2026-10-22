@@ -30,6 +30,15 @@ enum Brand {
         }
 
         // MARK: Photo access
+        /// The system's progress UI (Live Activity) while sorting continues in the background
+        enum Background {
+            static let sortingTitle: String = "Sorting screenshots"
+            static func toGo(_ count: Int) -> String { "\(count) to go" }
+            static let doneTitle: String = "Screenshots sorted"
+            static let pausedTitle: String = "Sorting paused"
+            static func paused(_ count: Int) -> String { "\(count) left · continues when you open the app" }
+        }
+
         enum Access {
             static let eyebrow: String = "Hey there 👋"
             static let title: String = "Let's tame that camera roll."
@@ -54,7 +63,7 @@ enum Brand {
 
             static let page1Eyebrow: String = "Step 1"
             static let page1Title: String = "Chaos in.\nOrder out."
-            static let page1Body: String = "We read every screenshot and drop it in the right stack. 70+ categories, zero effort."
+            static let page1Body: String = "We read every screenshot and drop it in the right stack. 50+ categories, zero effort."
 
             static let page2Eyebrow: String = "Step 2"
             static let page2Title: String = "Swipe. Done."

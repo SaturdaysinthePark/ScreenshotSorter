@@ -56,11 +56,11 @@ actor SearchService {
 
     /// Whole-word occurrences of any of the terms (singular or plural) in `text`
     static func occurrences(of terms: [String], in text: String) -> Int {
-        let tokens = TextNormalizer.tokenize(text.lowercased())
-        let forms = Set(terms.flatMap { term -> [String] in
-            let lowered = term.lowercased()
-            return [lowered, TextNormalizer.stem(lowered), lowered + "s"]
-        })
+        // "men's" and "children’s" mention men and children
+        let tokens = TextNormalizer.tokenize(text.lowercased()).map { token in
+            token.hasSuffix("'s") || token.hasSuffix("’s") ? String(token.dropLast(2)) : token
+        }
+        let forms = Set(terms.flatMap { wordForms($0.lowercased()) })
         let singleWords = forms.filter { !$0.contains(" ") }
         let phrases = forms.filter { $0.contains(" ") }
         var count = tokens.filter { singleWords.contains($0) || singleWords.contains(TextNormalizer.stem($0)) }.count
@@ -212,11 +212,39 @@ actor SearchService {
     func wholeWordExpression(_ query: ParsedQuery, joiner: String) -> String {
         var clauses: [String] = query.phrases.map { SearchService.quote($0) }
         for term in query.terms {
-            var forms: Set<String> = [term, TextNormalizer.stem(term)]
-            if !term.hasSuffix("s") { forms.insert(term + "s") }
+            let forms = Set(SearchService.wordForms(term))
             clauses.append("(" + forms.sorted().map { SearchService.quote($0) }.joined(separator: " OR ") + ")")
         }
         return clauses.joined(separator: joiner)
+    }
+
+    /// Plurals that don't just add an "s": "man" and "men" must fill the same collection
+    private static let irregularPlurals: [String: String] = [
+        "man": "men", "woman": "women", "person": "people", "child": "children", "foot": "feet", "tooth": "teeth",
+        "mouse": "mice", "goose": "geese", "knife": "knives", "leaf": "leaves", "wolf": "wolves", "shelf": "shelves",
+        "life": "lives", "wife": "wives", "cactus": "cacti"
+    ]
+    private static let irregularSingulars = Dictionary(irregularPlurals.map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+
+    /// The word, its stem and its plural or singular forms (lowercased input)
+    static func wordForms(_ term: String) -> [String] {
+        var forms: Set<String> = [term, TextNormalizer.stem(term)]
+        if let plural = irregularPlurals[term] { forms.insert(plural) }
+        if let singular = irregularSingulars[term] { forms.insert(singular) }
+        if term.hasSuffix("ss") { forms.insert(term + "es") }
+        if !term.hasSuffix("s") {
+            forms.insert(term + "s")
+            if term.hasSuffix("ch") || term.hasSuffix("sh") || term.hasSuffix("x") || term.hasSuffix("z") { forms.insert(term + "es") }
+            if term.count > 2, term.hasSuffix("y"), let before = term.dropLast().last, !"aeiou".contains(before) {
+                forms.insert(term.dropLast() + "ies")
+            }
+        }
+        // Compound words keep their last part's plural ("businessman" / "businessmen")
+        for (singular, plural) in irregularPlurals where term.count > singular.count {
+            if term.hasSuffix(singular) { forms.insert(term.dropLast(singular.count) + plural) }
+            if term.hasSuffix(plural) { forms.insert(term.dropLast(plural.count) + singular) }
+        }
+        return Array(forms)
     }
 
     static func quote(_ term: String) -> String {

@@ -66,7 +66,8 @@ extension Brand.Copy {
     }
 
     enum Search {
-        static let prompt: String = "Search text, apps, “receipts last week”…"
+        static let prompt: String = "Search screenshots and collections"
+        static let collectionsTitle: String = "Collections"
         static let understoodAs: String = "Looking for"
         static func resultCount(_ count: Int) -> String {
             count == 1 ? "1 match" : "\(count.formatted()) matches"

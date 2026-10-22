@@ -41,8 +41,8 @@ enum BackgroundAnalysisManager {
         guard remaining >= continuedThreshold else { return }
         let request = BGContinuedProcessingTaskRequest(
             identifier: continuedIdentifier,
-            title: "Sorting screenshots",
-            subtitle: "\(remaining) to go"
+            title: Brand.Copy.Background.sortingTitle,
+            subtitle: Brand.Copy.Background.toGo(remaining)
         )
         request.strategy = .queue
         do {
@@ -64,7 +64,17 @@ enum BackgroundAnalysisManager {
         }
     }
 
+    /// Sorting only (fast + deep passes). The language model can't use the Neural Engine in the background
+    /// without an extra entitlement on iOS 27, so counting it left the progress stuck and iOS expired the task,
+    /// which the system UI shows as "Task failed" while sorting was fine.
     private static func handleContinued(_ task: BGContinuedProcessingTask) {
+        // Read by the expiration handler, which can't await the scheduler
+        let state = OSAllocatedUnfairLock(initialState: (remaining: 0, finished: false))
+        /// The task completes once, from whichever side gets here first
+        let claimCompletion = { state.withLock { value -> Bool in
+            defer { value.finished = true }
+            return !value.finished
+        } }
         let work = Task { @MainActor in
             guard let scheduler = schedulerProvider?() else {
                 task.setTaskCompleted(success: false)
@@ -72,28 +82,36 @@ enum BackgroundAnalysisManager {
             }
             await scheduler.setInBackground(true)
             let start = await scheduler.currentProgress()
-            let total = max(1, start.fastRemaining + start.deepRemaining + start.modelRemaining)
+            let total = max(1, start.fastRemaining + start.deepRemaining)
             task.progress.totalUnitCount = Int64(total)
-
-            let reporter = Task { @MainActor in
-                while !Task.isCancelled {
-                    let current = await scheduler.currentProgress()
-                    let remaining = current.fastRemaining + current.deepRemaining + current.modelRemaining
+            var shown = -1
+            while !Task.isCancelled {
+                let current = await scheduler.currentProgress()
+                let remaining = current.fastRemaining + current.deepRemaining
+                state.withLock { $0.remaining = remaining }
+                if remaining == 0 { break }
+                if remaining != shown {
+                    shown = remaining
                     task.progress.completedUnitCount = Int64(max(0, total - remaining))
-                    task.updateTitle("Sorting screenshots", subtitle: "\(remaining) to go")
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    task.updateTitle(Brand.Copy.Background.sortingTitle, subtitle: Brand.Copy.Background.toGo(remaining))
                 }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
-            await scheduler.waitUntilDrained()
-            reporter.cancel()
+            guard !Task.isCancelled else { return }
+            guard claimCompletion() else { return }
             task.progress.completedUnitCount = Int64(total)
+            task.updateTitle(Brand.Copy.Background.doneTitle, subtitle: Brand.screenshots(total))
             task.setTaskCompleted(success: true)
+            if !(await scheduler.currentProgress()).isIdle { scheduleOvernight() }
         }
         task.expirationHandler = {
-            // Whatever is left continues next launch or in the overnight window
             work.cancel()
             scheduleOvernight()
-            task.setTaskCompleted(success: false)
+            let left = state.withLock { $0.remaining }
+            guard claimCompletion() else { return }
+            // Nothing was lost: everything sorted so far is saved and the rest continues next launch
+            task.updateTitle(Brand.Copy.Background.pausedTitle, subtitle: Brand.Copy.Background.paused(left))
+            task.setTaskCompleted(success: true)
         }
     }
 

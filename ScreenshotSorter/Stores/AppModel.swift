@@ -114,6 +114,14 @@ final class AppModel {
     private(set) var parsedQuery = ParsedQuery()
     var isSearchActive: Bool { !searchText.trimmingCharacters(in: .whitespaces).isEmpty || !searchTokens.isEmpty }
 
+    /// Collections named like the search, shown above the matching screenshots (with 50+ collections,
+    /// typing a name is faster than scrolling). O(collections), not O(library).
+    var searchCollections: [ScreenshotCollection] {
+        let kept = library.keptSmartCollections.map { library.preview(for: .smart(id: $0.id)) }
+        let categories = library.categoryCollections(sort: .imageCount).filter { $0.category != .other }
+        return ScreenshotCollection.matching(searchText, in: kept + categories, categories: parsedQuery.categories)
+    }
+
     // MARK: Services
 
     let store: AnalysisStore
@@ -261,8 +269,8 @@ final class AppModel {
             Task { await scheduler.setInBackground(false) }
             syncReviewedFromDefaults()
         case .inactive:
-            let remaining = progress.fastRemaining + progress.deepRemaining + progress.modelRemaining
-            BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: remaining)
+            // The system progress UI covers sorting only; titles and tags from the model finish overnight
+            BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: progress.fastRemaining + progress.deepRemaining)
         case .background:
             Task { await scheduler.setInBackground(true) }
             if !progress.isIdle {

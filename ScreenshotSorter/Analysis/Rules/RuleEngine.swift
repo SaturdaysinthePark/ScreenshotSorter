@@ -231,6 +231,12 @@ struct RuleEngine: Sendable {
         return result
     }
 
+    /// Categories a rule's negative terms rule out on this screen ("film simulation" for recipes): other sources,
+    /// the language model above all, mustn't add them back
+    func ruledOut(_ text: NormalizedText) -> Set<ScreenshotCategory> {
+        Set(rules.filter { rule in rule.negative.contains { text.contains(normalized: $0) } }.map(\.category))
+    }
+
     static func noisyOr(_ weights: [Double]) -> Double {
         1 - weights.reduce(1) { $0 * (1 - min(max($1, 0), 1)) }
     }

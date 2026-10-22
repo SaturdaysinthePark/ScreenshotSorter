@@ -148,3 +148,30 @@ struct ShelfRanking: Equatable {
             }
     }
 }
+
+extension ScreenshotCollection {
+    /// Collections to offer while searching: a word of the name starts with what's typed ("dri" → Drinks,
+    /// "trip" → Japan Trip), or the query names the category ("coffee" isn't a name, "tweets" → X / Twitter).
+    /// Exact and starting matches first, then the biggest.
+    static func matching(_ text: String, in collections: [ScreenshotCollection],
+                         categories: Set<ScreenshotCategory> = [], limit: Int = 8) -> [ScreenshotCollection] {
+        let typed = TextNormalizer.normalizeTerm(text)
+        guard typed.count >= 2 else { return [] }
+        func rank(_ collection: ScreenshotCollection) -> Int? {
+            let name = TextNormalizer.normalizeTerm(collection.title)
+            if name == typed { return 0 }
+            if name.hasPrefix(typed) { return 1 }
+            if name.split(separator: " ").contains(where: { $0.hasPrefix(typed) }) { return 2 }
+            if let category = collection.kind.category, categories.contains(category) { return 3 }
+            return nil
+        }
+        var ranked: [(collection: ScreenshotCollection, rank: Int)] = []
+        for collection in collections {
+            if let value = rank(collection) { ranked.append((collection, value)) }
+        }
+        ranked.sort { first, second in
+            first.rank == second.rank ? first.collection.count > second.collection.count : first.rank < second.rank
+        }
+        return ranked.prefix(limit).map(\.collection)
+    }
+}

@@ -142,6 +142,8 @@ enum ScreenshotClassifier {
             for category in insight.secondary where model[category] == nil {
                 model[category] = insight.confidence * (sawImage ? modelImageSecondaryWeight : modelSecondaryWeight)
             }
+            // The model reads "film recipe" as a recipe; the rules know better
+            for category in rules.ruledOut(text) { model[category] = nil }
             input.model = model
         }
 
@@ -150,7 +152,7 @@ enum ScreenshotClassifier {
            !modelFallbackTopics.contains(primary), needsTopic(categories.map(\.category)),
            // Only inside an app's post (TikTok, Reddit…), and not on ads: there its sure guesses were a coin flip
            categories.contains(where: { $0.category.kind == .app }), !text.contains(normalized: "sponsored"),
-           user.overrides[primary] != false {
+           user.overrides[primary] != false, !rules.ruledOut(text).contains(primary) {
             categories.removeAll { $0.category == .other || $0.category == primary }
             categories.append(ScoredCategory(category: primary, score: modelGapScore, sources: .foundationModel))
         }

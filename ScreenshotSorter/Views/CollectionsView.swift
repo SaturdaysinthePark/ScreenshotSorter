@@ -17,7 +17,7 @@ struct CollectionsView: View {
 
         ScrollView {
             if model.isSearchActive {
-                SearchResultsView()
+                SearchResultsView(collectionNamespace: zoomNamespace)
                     .transition(.opacity)
             } else {
                 homeContent
