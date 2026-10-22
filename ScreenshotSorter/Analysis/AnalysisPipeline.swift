@@ -5,14 +5,29 @@ import os
 /// Turns a photo-library asset into an `AnalysisRecord`.
 ///
 /// - Fast pass: small image, one Vision handler (classifier, fast OCR, barcodes, faces) → categories.
-/// - Deep pass: larger image, accurate OCR + feature print, entities, on-device language model,
-///   text embedding.
+///   iCloud-only originals are downloaded when `NetworkPolicy` allows it, else sorted from the local
+///   preview and marked `needsNetwork`.
+/// - Deep pass: larger image, accurate OCR + feature print, entities, text embedding. Decides whether
+///   the language model is worth running but doesn't wait for it.
+/// - Model pass: the on-device language model from stored features (no pixels). It handles one
+///   request at a time system-wide (~2–3 s each on device), so it runs after text and search are done.
 /// - Rescore: re-run rules/fusion from stored features (no pixels) after rule or feedback changes.
-struct AnalysisPipeline: Sendable {
+/// The three passes the scheduler runs (a seam so scheduling can be tested without PhotoKit).
+protocol AnalysisPasses: Sendable {
+    func runFast(id: String, createdAt: Date, allowDownloads: Bool) async -> AnalysisPipeline.Result
+    func runDeep(id: String, createdAt: Date, allowDownloads: Bool) async -> AnalysisPipeline.DeepOutcome
+    func runModel(id: String) async -> (AnalysisPipeline.Result, retryLater: Bool)
+}
+
+struct AnalysisPipeline: AnalysisPasses {
     static let fastMaxPixel: CGFloat = 1280
     static let deepMaxPixel: CGFloat = 2048
     static let fastTimeout: Double = 8
+    /// Fast pass when it may download an iCloud original
+    static let fastDownloadTimeout: Double = 25
     static let deepTimeout: Double = 45
+    /// Local previews smaller than this (longest side) aren't worth running Vision on
+    static let previewMinimumPixel = 480
     static let maxFailures = 3
 
     let store: AnalysisStore
@@ -28,6 +43,14 @@ struct AnalysisPipeline: Sendable {
         case skipped
     }
 
+    struct DeepOutcome: Sendable {
+        var result: Result
+        /// The language model is worth running on this one (queue a model pass)
+        var needsModel: Bool = false
+        /// iCloud-only and downloads aren't allowed right now: park until they are
+        var waitingForNetwork: Bool = false
+    }
+
     /// One line per decision (debug level: free unless streamed, e.g. `log stream --level debug
     /// --predicate 'subsystem == "sabtain.ScreenshotSorter" AND category == "Pipeline"'`).
     private static func logDecision(_ pass: StaticString, id: String, _ result: ClassificationOutput) {
@@ -36,17 +59,17 @@ struct AnalysisPipeline: Sendable {
 
     // MARK: Fast
 
-    func runFast(id: String, createdAt: Date) async -> Result {
-        let state = AnalysisPipeline.signposter.beginInterval("fastPass")
+    func runFast(id: String, createdAt: Date, allowDownloads: Bool) async -> Result {
+        let state = AnalysisPipeline.signposter.beginInterval("fastPass", id: AnalysisPipeline.signposter.makeSignpostID())
         defer { AnalysisPipeline.signposter.endInterval("fastPass", state) }
 
         var record = await store.record(id: id) ?? AnalysisRecord(id: id, createdAt: createdAt)
         record.createdAt = createdAt
         do {
-            let image = try await withTimeout(seconds: AnalysisPipeline.fastTimeout) {
-                try await PhotoImageLoader.loadCGImage(id: id, maxPixel: AnalysisPipeline.fastMaxPixel, allowNetwork: false)
-            }
+            let (image, fromPreview) = try await loadFastImage(id: id, allowDownloads: allowDownloads)
+            let visionState = AnalysisPipeline.signposter.beginInterval("fastVision", id: AnalysisPipeline.signposter.makeSignpostID())
             let output = try await VisionExtractor.fast(image)
+            AnalysisPipeline.signposter.endInterval("fastVision", visionState)
             let user = await learner.signals(for: id, vectors: vectors)
             let insight = record.fmVersion == PipelineVersion.fm ? record.insight : nil
             let result = ScreenshotClassifier.classify(features: output.features, insight: insight, user: user, includeEntities: false)
@@ -57,10 +80,11 @@ struct AnalysisPipeline: Sendable {
             record.tier = wasCurrentDeep ? .deep : .fast
             record.visionVersion = PipelineVersion.vision
             record.rulesVersion = PipelineVersion.rules
-            record.needsNetwork = false
+            // From a preview: the full-resolution pass still needs the original
+            record.needsNetwork = fromPreview
             record.failCount = 0
         } catch ImageLoaderError.needsNetwork {
-            // iCloud-only original: the deep lane (network allowed) will pick it up
+            // iCloud-only, no usable preview and no downloads right now: parked until Wi-Fi
             record.needsNetwork = true
         } catch is CancellationError {
             return .skipped
@@ -79,49 +103,55 @@ struct AnalysisPipeline: Sendable {
         return .finished(record)
     }
 
+    /// The fast-pass image: the original (downloaded if allowed), else the on-device preview.
+    private func loadFastImage(id: String, allowDownloads: Bool) async throws -> (CGImage, fromPreview: Bool) {
+        let state = AnalysisPipeline.signposter.beginInterval("fastLoad", id: AnalysisPipeline.signposter.makeSignpostID())
+        defer { AnalysisPipeline.signposter.endInterval("fastLoad", state) }
+        do {
+            let image = try await withTimeout(seconds: allowDownloads ? AnalysisPipeline.fastDownloadTimeout : AnalysisPipeline.fastTimeout) {
+                try await PhotoImageLoader.loadCGImage(id: id, maxPixel: AnalysisPipeline.fastMaxPixel, allowNetwork: allowDownloads)
+            }
+            return (image, false)
+        } catch ImageLoaderError.needsNetwork {
+            // Off Wi-Fi: a rough first sort from the on-device preview beats waiting for hours
+            let preview = try? await withTimeout(seconds: 5) {
+                await PhotoImageLoader.loadLocalPreview(id: id, maxPixel: AnalysisPipeline.fastMaxPixel,
+                                                        minimumPixel: AnalysisPipeline.previewMinimumPixel)
+            }
+            guard let preview = preview ?? nil else { throw ImageLoaderError.needsNetwork }
+            return (preview, true)
+        }
+    }
+
     // MARK: Deep
 
-    /// - Returns: the record and whether the language-model step should be retried later.
-    func runDeep(id: String, createdAt: Date, useLanguageModel: Bool) async -> (Result, retryModel: Bool) {
-        let state = AnalysisPipeline.signposter.beginInterval("deepPass")
+    func runDeep(id: String, createdAt: Date, allowDownloads: Bool) async -> DeepOutcome {
+        let state = AnalysisPipeline.signposter.beginInterval("deepPass", id: AnalysisPipeline.signposter.makeSignpostID())
         defer { AnalysisPipeline.signposter.endInterval("deepPass", state) }
 
         var record = await store.record(id: id) ?? AnalysisRecord(id: id, createdAt: createdAt)
         record.createdAt = createdAt
-        var retryModel = false
+        var needsModel = false
         do {
             let image = try await withTimeout(seconds: AnalysisPipeline.deepTimeout) {
-                try await PhotoImageLoader.loadCGImage(id: id, maxPixel: AnalysisPipeline.deepMaxPixel, allowNetwork: true)
+                try await PhotoImageLoader.loadCGImage(id: id, maxPixel: AnalysisPipeline.deepMaxPixel, allowNetwork: allowDownloads)
             }
             let output = try await VisionExtractor.deep(image)
             let features = output.features
             let entities = EntityExtractor.extract(from: features.fullText)
 
-            // Language model: only where it adds something (text to read, or an uncertain result)
-            var insight: ModelInsight? = record.fmVersion == PipelineVersion.fm ? record.insight : nil
-            // True once the model question is settled for this pipeline version
+            // Language model: only where it adds something (text to read, or an uncertain result).
+            // Decided here, run later in the model lane so text and search aren't held up by it.
+            let insight: ModelInsight? = record.fmVersion == PipelineVersion.fm ? record.insight : nil
             var modelDecided = insight != nil
-            if insight == nil && useLanguageModel && FMClassifier.isAvailable {
+            if insight == nil {
                 let preliminary = ScreenshotClassifier.classify(features: features, entities: entities)
                 let topScore = preliminary.categories.first?.score ?? 0
                 let worthIt = features.fullText.count >= 40 || topScore < 0.75 || preliminary.categories.first?.category == .other
-                if !worthIt {
+                if worthIt && FMClassifier.isAvailable {
+                    needsModel = true
+                } else if !worthIt {
                     modelDecided = true
-                } else {
-                    let fmState = AnalysisPipeline.signposter.beginInterval("languageModel")
-                    let outcome = await FMClassifier.shared.insight(for: features, appHint: preliminary.app?.displayName)
-                    AnalysisPipeline.signposter.endInterval("languageModel", fmState)
-                    switch outcome {
-                    case .insight(let value):
-                        insight = value
-                        modelDecided = true
-                    case .skipped:
-                        modelDecided = true
-                    case .retryLater:
-                        retryModel = true
-                    case .unavailable:
-                        break
-                    }
                 }
             }
 
@@ -141,16 +171,20 @@ struct AnalysisPipeline: Sendable {
             record.needsNetwork = false
             record.failCount = 0
 
-            let embedState = AnalysisPipeline.signposter.beginInterval("embed")
+            let embedState = AnalysisPipeline.signposter.beginInterval("embed", id: AnalysisPipeline.signposter.makeSignpostID())
             record.embedding = await TextEmbedder.shared.embed(TextEmbedder.document(for: record))
             record.embeddingModel = record.embedding == nil ? nil : TextEmbedder.modelID
             AnalysisPipeline.signposter.endInterval("embed", embedState)
 
             await vectors.upsert(id: id, text: record.embedding, visual: record.featurePrint)
+        } catch ImageLoaderError.needsNetwork {
+            // Not a failure: the original is in iCloud and downloads are paused (cellular / Low Data Mode)
+            record.needsNetwork = true
+            return DeepOutcome(result: .finished(record), waitingForNetwork: true)
         } catch is CancellationError {
-            return (.skipped, false)
+            return DeepOutcome(result: .skipped)
         } catch ImageLoaderError.cancelled {
-            return (.skipped, false)
+            return DeepOutcome(result: .skipped)
         } catch {
             AnalysisPipeline.logger.error("Deep pass failed for \(id, privacy: .public) (attempt \(record.failCount + 1)): \(String(describing: error), privacy: .public)")
             record.failCount += 1
@@ -161,7 +195,43 @@ struct AnalysisPipeline: Sendable {
             }
         }
         record.analyzedAt = Date()
-        return (.finished(record), retryModel)
+        return DeepOutcome(result: .finished(record), needsModel: needsModel)
+    }
+
+    // MARK: Model
+
+    /// The language-model step from stored features. - Returns: the updated record, or whether to
+    /// retry later (model busy / rate limited).
+    func runModel(id: String) async -> (Result, retryLater: Bool) {
+        guard var record = await store.record(id: id), let features = record.features,
+              record.fmVersion < PipelineVersion.fm else { return (.skipped, false) }
+        let state = AnalysisPipeline.signposter.beginInterval("languageModel", id: AnalysisPipeline.signposter.makeSignpostID())
+        let outcome = await FMClassifier.shared.insight(for: features, appHint: record.app)
+        AnalysisPipeline.signposter.endInterval("languageModel", state)
+        let insight: ModelInsight?
+        switch outcome {
+        case .insight(let value):
+            insight = value
+        case .skipped:
+            insight = nil
+        case .retryLater:
+            return (.skipped, true)
+        case .unavailable:
+            return (.skipped, false)
+        }
+        guard !Task.isCancelled else { return (.skipped, false) }
+        let user = await learner.signals(for: id, vectors: vectors)
+        let result = ScreenshotClassifier.classify(features: features, insight: insight, user: user, entities: record.entities)
+        apply(result, features: features, insight: insight, to: &record)
+        AnalysisPipeline.logDecision("model", id: id, result)
+        record.fmVersion = PipelineVersion.fm
+        record.rulesVersion = PipelineVersion.rules
+        // Title, summary and tags feed the search embedding
+        record.embedding = await TextEmbedder.shared.embed(TextEmbedder.document(for: record))
+        record.embeddingModel = record.embedding == nil ? nil : TextEmbedder.modelID
+        await vectors.upsert(id: id, text: record.embedding, visual: record.featurePrint)
+        record.analyzedAt = Date()
+        return (.finished(record), false)
     }
 
     // MARK: Rescore

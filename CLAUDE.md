@@ -11,6 +11,11 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
   `xcodebuild test -project ScreenshotSorter.xcodeproj -scheme ScreenshotSorter -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:ScreenshotSorterTests`
 - **Vision image classification does not work in the iOS 26 simulator** — measure classification
   speed/accuracy on a physical device. UI work is fine on the simulator.
+- Device profiling without Xcode UI: `xcrun xctrace record --device <udid> --template Logging
+  --instrument 'Activity Monitor' --all-processes --time-limit 60s` (Release builds can't be attached
+  to), then `xctrace export --xpath …os-log / OSSignpostIntervals`. Pipeline signposts: fastPass,
+  fastLoad, fastVision, deepPass, languageModel, embed. Check the `Budget` log line first — a warm
+  phone (`thermal=2`) runs one item at a time by design.
 - Swift 5 language mode; no third-party packages.
 
 ## Architecture
@@ -22,11 +27,16 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
   embeddings, feature prints, corrections, smart collections. Categories persist by stable
   `ScreenshotCategory.key`, never by display name.
 - `Analysis/` — the pipeline:
-  - `AnalysisScheduler` (actor): sliding-window concurrency, urgent → fast → deep priorities,
-    budgets from `ResourceGovernor` (thermal / Low Power / background).
+  - `AnalysisScheduler` (actor): sliding-window concurrency, urgent → fast → deep → model lanes,
+    budgets from `ResourceGovernor` (thermal / Low Power / background). The language model runs one
+    at a time and only after deep work is done (~2–3 s per request on device, serialised system-wide).
   - `AnalysisPipeline`: fast pass (1280px, one Vision handler: classifier + fast OCR + barcodes +
-    faces) → deep pass (2048px, accurate OCR + feature print, entities, Foundation Models,
-    embedding) → `rescore` (rules/fusion from stored features, no pixels).
+    faces) → deep pass (2048px, accurate OCR + feature print, entities, embedding; decides if the
+    model is worth it) → model pass (Foundation Models from stored features) → `rescore` (rules/fusion
+    from stored features, no pixels).
+  - iCloud-only originals ("Optimize iPhone Storage" — often >90% of a real library) download only when
+    `Services/NetworkPolicy` allows (not cellular/hotspot, not Low Data Mode). Otherwise the fast pass
+    uses the on-device preview and items are parked (`waitingForNetwork`) until Wi-Fi returns.
   - `ScreenshotClassifier` (pure): `TextNormalizer` (token-boundary matching, screen zones),
     `RuleEngine` + `CategoryRules`, `AppDetector` + `AppSignatures`, `VisionLabelMap`,
     `EntityExtractor`, `SignalFusion` (noisy-OR with per-source reliabilities, user overrides).

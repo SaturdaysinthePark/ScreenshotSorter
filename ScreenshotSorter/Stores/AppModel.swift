@@ -143,6 +143,11 @@ final class AppModel {
         didStart = true
         BackgroundAnalysisManager.schedulerProvider = { [weak self] in self?.scheduler }
         listenToScheduler()
+        // iCloud-only screenshots resume when Wi-Fi comes back
+        let scheduler = self.scheduler
+        NetworkPolicy.shared.observe { allowed in
+            Task { await scheduler.networkChanged(allowsDownloads: allowed) }
+        }
 
         await LegacyCacheMigrator.migrateIfNeeded(into: store)
         let textVectors = await store.embeddings(model: TextEmbedder.modelID)
@@ -196,6 +201,7 @@ final class AppModel {
 
         var fast: [(id: String, date: Date)] = []
         var deep: [(id: String, date: Date)] = []
+        var model: [(id: String, date: Date)] = []
         var rescore: [String] = []
         let modelAvailable = FMClassifier.isAvailable
         for asset in assets {
@@ -210,13 +216,15 @@ final class AppModel {
             } else if state.tier == .fast || state.needsNetwork {
                 deep.append(item)
             } else if modelAvailable && state.fmVersion < PipelineVersion.fm {
-                deep.append(item)
+                // Text and features are stored: only the language-model step is missing
+                model.append(item)
             } else if state.rulesVersion < PipelineVersion.rules {
                 rescore.append(item.id)
             }
         }
         await scheduler.enqueueFast(fast)
         await scheduler.enqueueDeep(deep)
+        await scheduler.enqueueModel(model)
         if !rescore.isEmpty {
             await rescoreRecords(ids: rescore)
         }
@@ -228,11 +236,11 @@ final class AppModel {
             Task { await scheduler.setInBackground(false) }
             syncReviewedFromDefaults()
         case .inactive:
-            let remaining = progress.fastRemaining + progress.deepRemaining
+            let remaining = progress.fastRemaining + progress.deepRemaining + progress.modelRemaining
             BackgroundAnalysisManager.submitContinuedIfNeeded(remaining: remaining)
         case .background:
             Task { await scheduler.setInBackground(true) }
-            if progress.deepRemaining > 0 || progress.fastRemaining > 0 {
+            if !progress.isIdle {
                 BackgroundAnalysisManager.scheduleOvernight()
             }
         @unknown default:

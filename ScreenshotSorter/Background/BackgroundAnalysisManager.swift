@@ -72,13 +72,13 @@ enum BackgroundAnalysisManager {
             }
             await scheduler.setInBackground(true)
             let start = await scheduler.currentProgress()
-            let total = max(1, start.fastRemaining + start.deepRemaining)
+            let total = max(1, start.fastRemaining + start.deepRemaining + start.modelRemaining)
             task.progress.totalUnitCount = Int64(total)
 
             let reporter = Task { @MainActor in
                 while !Task.isCancelled {
                     let current = await scheduler.currentProgress()
-                    let remaining = current.fastRemaining + current.deepRemaining
+                    let remaining = current.fastRemaining + current.deepRemaining + current.modelRemaining
                     task.progress.completedUnitCount = Int64(max(0, total - remaining))
                     task.updateTitle("Sorting screenshots", subtitle: "\(remaining) to go")
                     try? await Task.sleep(nanoseconds: 1_000_000_000)

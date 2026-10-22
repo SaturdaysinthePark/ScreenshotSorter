@@ -35,6 +35,13 @@ extension Brand.Copy {
         static func reading(_ remaining: Int) -> String {
             "Reading the fine print · \(remaining.formatted()) left"
         }
+        static func polishing(_ remaining: Int) -> String {
+            "Polishing titles · \(remaining.formatted()) left"
+        }
+        static func waitingForWiFi(_ count: Int) -> String {
+            "\(count.formatted()) waiting for Wi-Fi"
+        }
+        static let waitingDetail: String = "They're in iCloud. We'll fetch them on Wi-Fi."
         static let paused: String = "Paused. Your screenshots will wait."
         static let lowPowerHint: String = "Taking it easy to save battery"
         static func speed(_ perSecond: Double) -> String {

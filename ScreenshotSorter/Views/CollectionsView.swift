@@ -82,7 +82,7 @@ struct CollectionsView: View {
             heroStats
                 .padding(.horizontal, Space.gutter)
 
-            if !model.progress.isIdle || model.progress.isPaused {
+            if !model.progress.isIdle || model.progress.isPaused || model.progress.waitingForNetwork > 0 {
                 AnalysisProgressCard()
                     .padding(.horizontal, Space.gutter)
                     .transition(.move(edge: .top).combined(with: .opacity))

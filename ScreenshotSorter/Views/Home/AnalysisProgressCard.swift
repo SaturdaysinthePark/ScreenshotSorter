@@ -1,12 +1,24 @@
 import SwiftUI
 
-/// Live "sorting" card: animated progress, throughput, deep-pass status, pause/resume.
+/// Live "sorting" card: animated progress, throughput, deep-pass / language-model status,
+/// iCloud screenshots waiting for Wi-Fi, pause/resume.
 struct AnalysisProgressCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var progress: AnalysisProgress { model.progress }
+
+    private enum Phase { case paused, sorting, reading, polishing, waiting }
+
+    private var phase: Phase {
+        if progress.isPaused { return .paused }
+        if progress.fastRemaining > 0 { return .sorting }
+        if progress.deepRemaining > 0 { return .reading }
+        if progress.modelRemaining > 0 { return .polishing }
+        // Only shown in this state because iCloud screenshots are waiting for Wi-Fi
+        return .waiting
+    }
 
     var body: some View {
         let total = model.library.count
@@ -20,7 +32,7 @@ struct AnalysisProgressCard: View {
                 HStack(spacing: Space.sm) {
                     statusIcon
                     Spacer(minLength: 0)
-                    pauseButton
+                    if phase != .waiting { pauseButton }
                 }
                 labels(analyzed: analyzed, total: total, isFastPhase: isFastPhase)
             } else {
@@ -28,11 +40,11 @@ struct AnalysisProgressCard: View {
                     statusIcon
                     labels(analyzed: analyzed, total: total, isFastPhase: isFastPhase)
                     Spacer(minLength: 0)
-                    pauseButton
+                    if phase != .waiting { pauseButton }
                 }
             }
 
-            DSProgressBar(progress: isFastPhase ? fraction : deepFraction)
+            DSProgressBar(progress: barFraction(analyzedFraction: fraction))
                 .dsAnimation(Motion.gentle, value: fraction)
         }
         .padding(Space.md)
@@ -41,10 +53,10 @@ struct AnalysisProgressCard: View {
     }
 
     private var statusIcon: some View {
-        Image(systemName: progress.isPaused ? "pause.circle.fill" : "wand.and.stars")
+        Image(systemName: phase == .paused ? "pause.circle.fill" : phase == .waiting ? "icloud.and.arrow.down" : "wand.and.stars")
             .font(.dsTitle2)
             .foregroundStyle(Palette.brand)
-            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: !progress.isPaused && !reduceMotion)
+            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: phase != .paused && phase != .waiting && !reduceMotion)
             .frame(width: 36)
     }
 
@@ -79,23 +91,38 @@ struct AnalysisProgressCard: View {
         .accessibilityLabel(progress.isPaused ? Brand.Copy.Analysis.resumeLabel : Brand.Copy.Analysis.pauseLabel)
     }
 
-    private var deepFraction: Double {
-        let done = Double(progress.deepCompleted)
-        let remaining = Double(progress.deepRemaining)
-        guard done + remaining > 0 else { return 1 }
-        return done / (done + remaining)
+    private func barFraction(analyzedFraction: Double) -> Double {
+        func share(_ done: Int, _ remaining: Int) -> Double {
+            done + remaining > 0 ? Double(done) / Double(done + remaining) : 1
+        }
+        switch phase {
+        case .sorting, .paused, .waiting: return analyzedFraction
+        case .reading: return share(progress.deepCompleted, progress.deepRemaining)
+        case .polishing: return share(progress.modelCompleted, progress.modelRemaining)
+        }
     }
 
     private func headline(analyzed: Int, total: Int, isFastPhase: Bool) -> String {
-        if progress.isPaused { return Brand.Copy.Analysis.paused }
-        if isFastPhase { return Brand.Copy.Analysis.sorting(analyzed, total) }
-        return Brand.Copy.Analysis.reading(progress.deepRemaining)
+        switch phase {
+        case .paused: return Brand.Copy.Analysis.paused
+        case .sorting: return Brand.Copy.Analysis.sorting(analyzed, total)
+        case .reading: return Brand.Copy.Analysis.reading(progress.deepRemaining)
+        case .polishing: return Brand.Copy.Analysis.polishing(progress.modelRemaining)
+        case .waiting: return Brand.Copy.Analysis.waitingForWiFi(progress.waitingForNetwork)
+        }
     }
 
     private var detailLine: String? {
-        if progress.isPaused { return nil }
+        switch phase {
+        case .paused: return nil
+        case .waiting: return Brand.Copy.Analysis.waitingDetail
+        default: break
+        }
         if ProcessInfo.processInfo.isLowPowerModeEnabled { return Brand.Copy.Analysis.lowPowerHint }
+        var parts: [String] = []
         let speed = Brand.Copy.Analysis.speed(progress.itemsPerSecond)
-        return speed.isEmpty ? nil : speed
+        if !speed.isEmpty { parts.append(speed) }
+        if progress.waitingForNetwork > 0 { parts.append(Brand.Copy.Analysis.waitingForWiFi(progress.waitingForNetwork)) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
