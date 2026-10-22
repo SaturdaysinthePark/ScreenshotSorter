@@ -94,23 +94,30 @@ struct ScaleTests {
 
     // MARK: Main-actor work per frame / per batch
 
-    /// What the home screen reads on every render while sorting (hero stats, progress card,
-    /// "All Screenshots" card, shelves).
+    /// What the home screen reads on every render while sorting (progress card, "All Screenshots" row,
+    /// the collection grid in frozen shelf order, and "+N new" per tile since a visit a day ago).
     @MainActor
-    static func homeRender(_ library: LibraryStore) {
+    static func homeRender(_ library: LibraryStore, ranking: ShelfRanking = ShelfRanking()) {
         _ = library.analyzedCount
         _ = library.analyzedCount
         _ = library.preview(for: .all).screenshots
-        let shelves = library.categoryCollections(sort: .imageCount)
-        for shelf in shelves { _ = shelf.screenshots.prefix(4); _ = shelf.count }
+        let tiles = ranking.shelves(library.categoryCollections(sort: .imageCount)).flatMap(\.collections)
+        let visit = Date().addingTimeInterval(-86_400)
+        for tile in tiles {
+            _ = tile.screenshots.prefix(3); _ = tile.count
+            for id in library.ids(for: tile.kind) {
+                guard let date = library.screenshot(id: id)?.creationDate, date > visit else { break }
+            }
+        }
     }
 
     @Test @MainActor func homeRenderStaysFlatAtLargeLibrarySizes() {
         let library = ScaleTests.library(count: ScaleTests.librarySize, analyzed: true)
-        ScaleTests.homeRender(library) // warm caches
+        let ranking = ShelfRanking(library.categoryCollections(sort: .imageCount))
+        ScaleTests.homeRender(library, ranking: ranking) // warm caches
         let renders = 30
         let total = ScaleTests.measure("home render ×\(renders) at \(ScaleTests.librarySize)") {
-            for _ in 0..<renders { ScaleTests.homeRender(library) }
+            for _ in 0..<renders { ScaleTests.homeRender(library, ranking: ranking) }
         }
         let perRender = total / renders
         print("⏱ per home render: \(perRender)")

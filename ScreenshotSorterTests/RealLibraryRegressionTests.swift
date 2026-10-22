@@ -58,6 +58,35 @@ struct RealLibraryRegressionTests {
         #expect(ScreenshotClassifier.knownApp("tiktok") == "TikTok")
     }
 
+    @Test func modelFillsTheTopicGapOnFeedPosts() {
+        let post = TestSupport.features(lines: [("Following", .topBar), ("Shop", .topBar), ("For You", .topBar),
+                                                ("Visiting Boston's", .body), ("Ube cafe", .body), ("1,239", .body),
+                                                ("Home", .bottomBar), ("Friends", .bottomBar), ("Inbox", .bottomBar),
+                                                ("Profile", .bottomBar)])
+        #expect(ScreenshotClassifier.classify(features: post, includeEntities: false).app?.appID == "tiktok")
+        let rulesOnly = labels(post)
+        #expect(!rulesOnly.contains(.places))
+        let sure = ModelInsight(primary: .places, secondary: [], confidence: 0.9, app: nil, title: "Ube Cafe Boston",
+                                summary: "", tags: [])
+        #expect(labels(post, insight: sure).contains(.places))
+        // Not on a guess, and never with the topics it falls back on when it has no idea
+        let likely = ModelInsight(primary: .places, secondary: [], confidence: 0.7, app: nil, title: "", summary: "", tags: [])
+        #expect(!labels(post, insight: likely).contains(.places))
+        let fallback = ModelInsight(primary: .events, secondary: [], confidence: 0.9, app: nil, title: "", summary: "", tags: [])
+        #expect(!labels(post, insight: fallback).contains(.events))
+        // A stand-alone ad isn't a feed post: no gap filling there
+        let ad = screen(["caraway_home", "Sponsored", "Holiday Savings", "Shop now"])
+        let recipe = ModelInsight(primary: .recipes, secondary: [], confidence: 0.9, app: nil, title: "", summary: "", tags: [])
+        #expect(!labels(ad, insight: recipe).contains(.recipes))
+    }
+
+    @Test func textlessScreenshotsAreNotSentToATextOnlyModel() {
+        let photo = screen(["9:41"])
+        #expect(!FMClassifier.isWorthAsking(photo, canSeeImages: false))
+        #expect(FMClassifier.isWorthAsking(photo, canSeeImages: true))
+        #expect(FMClassifier.isWorthAsking(screen(["Kaldi's Coffee", "4.6", "Open · Closes 5 PM"]), canSeeImages: false))
+    }
+
     @Test func namesFromOCRAreNotTags() {
         let features = screen(["bonus bet tokens", "Claim now"])
         let entities = [ExtractedEntity(type: .organization, value: "bonus bet tokens", normalized: nil)]

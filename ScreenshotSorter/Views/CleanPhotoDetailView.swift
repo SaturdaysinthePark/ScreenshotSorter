@@ -349,6 +349,26 @@ struct PhotoDetailView: View {
                     } label: {
                         Label(Brand.Copy.Detail.editLabels, systemImage: "tag")
                     }
+                    if let current, !model.library.keptSmartCollections.isEmpty {
+                        Menu {
+                            ForEach(model.library.keptSmartCollections) { collection in
+                                let isMember = collection.memberIDs.contains(current.id)
+                                Button {
+                                    HapticManager.shared.success()
+                                    if isMember {
+                                        model.removeFromSmartCollection([current.id], collectionID: collection.id)
+                                    } else {
+                                        model.addToSmartCollection([current.id], collectionID: collection.id)
+                                        showToast(Brand.Copy.Detail.addedTo(collection.name), systemImage: "checkmark.circle.fill", tint: Palette.brand)
+                                    }
+                                } label: {
+                                    Label(collection.name, systemImage: isMember ? "checkmark" : collection.symbol)
+                                }
+                            }
+                        } label: {
+                            Label(Brand.Copy.Detail.addToCollection, systemImage: "rectangle.stack.badge.plus")
+                        }
+                    }
                     Divider()
                     Button(role: .destructive) {
                         showDeleteConfirm = true

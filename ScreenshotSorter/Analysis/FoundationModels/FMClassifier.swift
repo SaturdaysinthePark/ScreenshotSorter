@@ -43,6 +43,13 @@ actor FMClassifier {
         return false
     }
 
+    /// Without the image, a screenshot with almost no text gives the model nothing to go on: on the eval
+    /// corpus it answered "receipts" or "events" for nearly every photo. Don't ask.
+    static func isWorthAsking(_ features: ExtractedFeatures, canSeeImages: Bool = FMClassifier.canSeeImages) -> Bool {
+        canSeeImages || features.lines.filter { $0.zone != .statusBar }.count >= minimumTextLines
+    }
+    static let minimumTextLines = 3
+
     /// Longest side of the image handed to the model: enough to read a post or a product photo, small
     /// enough to keep each request to a couple of seconds.
     static let imageMaxPixel: CGFloat = 768

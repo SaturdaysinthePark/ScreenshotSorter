@@ -24,30 +24,39 @@ func runModelPass(_ items: [(ManifestEntry, ExtractedFeatures)], corpus: URL) as
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     var predictions: [Prediction] = []
-    var primaryRight = 0, primaryTotal = 0, secondaryRight = 0, secondaryTotal = 0, unavailable = 0
+    var primaryRight = 0, primaryTotal = 0, secondaryRight = 0, secondaryTotal = 0, unavailable = 0, skipped = 0
     var latencies: [Double] = []
     let clock = ContinuousClock()
 
     for (index, (entry, features)) in items.enumerated() {
         let rulesOnly = ScreenshotClassifier.classify(features: features)
-        let start = clock.now
-        let outcome = await FMClassifier.shared.insight(for: features, appHint: rulesOnly.app?.displayName)
-        let elapsed = clock.now - start
-        let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
-        guard case .insight(let insight) = outcome else {
-            unavailable += 1
-            continue
+        // Same gate as the app's deep pass (text-only: skip screenshots with almost no text); skipped ones
+        // keep their rules-only result, as in the app
+        var insight: ModelInsight?
+        var ms = 0.0
+        if FMClassifier.isWorthAsking(features) {
+            let start = clock.now
+            let outcome = await FMClassifier.shared.insight(for: features, appHint: rulesOnly.app?.displayName)
+            let elapsed = clock.now - start
+            ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+            if case .insight(let value) = outcome {
+                insight = value
+                latencies.append(ms)
+            } else {
+                unavailable += 1
+            }
+        } else {
+            skipped += 1
         }
-        latencies.append(ms)
-        let fused = ScreenshotClassifier.classify(features: features, insight: insight)
+        let fused = insight.map { ScreenshotClassifier.classify(features: features, insight: $0) } ?? rulesOnly
         let accepted = Set(entry.expect + (entry.allow ?? []))
         // The model picks topics, never apps: only screenshots with a topic to find count
         let hasTopic = entry.expect.contains { ScreenshotCategory(key: $0).map { $0.kind != .app } ?? false }
-        if hasTopic, let primary = insight.primary {
+        if hasTopic, let primary = insight?.primary {
             primaryTotal += 1
             if accepted.contains(primary.key) { primaryRight += 1 }
         }
-        for category in insight.secondary {
+        for category in insight?.secondary ?? [] {
             secondaryTotal += 1
             if accepted.contains(category.key) { secondaryRight += 1 }
         }
@@ -62,15 +71,16 @@ func runModelPass(_ items: [(ManifestEntry, ExtractedFeatures)], corpus: URL) as
             predicted: predicted, sources: sources, ruleHits: [:], visionLabels: [:],
             app: fused.app?.appID, expectedApp: entry.app, extractMs: 0, classifyMs: ms,
             ocrLines: features.lines.count, text: ""))
-        let line = ModelLine(file: entry.file, expect: entry.expect, primary: insight.primary?.key,
-                             secondary: insight.secondary.map(\.key), confidence: insight.confidence,
-                             title: insight.title, tags: insight.tags, app: insight.app, ms: ms.rounded(), fused: predicted)
+        let line = ModelLine(file: entry.file, expect: entry.expect, primary: insight?.primary?.key,
+                             secondary: insight?.secondary.map(\.key) ?? [], confidence: insight?.confidence ?? 0,
+                             title: insight?.title ?? "", tags: insight?.tags ?? [], app: insight?.app, ms: ms.rounded(),
+                             fused: predicted)
         try handle.write(contentsOf: encoder.encode(line) + Data("\n".utf8))
         if index % 25 == 24 { print("  model \(index + 1)/\(items.count)") }
     }
-    let summary = String(format: "model topic right %d/%d (%.0f%%) · secondary right %d/%d (%.0f%%) · p50 %.0f ms · p95 %.0f ms · not answered %d",
+    let summary = String(format: "model topic right %d/%d (%.0f%%) · secondary right %d/%d (%.0f%%) · p50 %.0f ms · p95 %.0f ms · not answered %d · not asked (no text) %d",
                          primaryRight, primaryTotal, 100 * Double(primaryRight) / Double(max(1, primaryTotal)),
                          secondaryRight, secondaryTotal, 100 * Double(secondaryRight) / Double(max(1, secondaryTotal)),
-                         percentile(latencies, 0.5), percentile(latencies, 0.95), unavailable)
+                         percentile(latencies, 0.5), percentile(latencies, 0.95), unavailable, skipped)
     return (predictions, summary)
 }

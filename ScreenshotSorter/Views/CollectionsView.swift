@@ -7,6 +7,7 @@ struct CollectionsView: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var zoomNamespace
     @State private var showReview = false
     @State private var showReanalyzeConfirm = false
@@ -151,9 +152,12 @@ struct CollectionsView: View {
         let collection = model.library.preview(for: .all)
         return NavigationLink(value: CollectionKind.all) {
             HStack(spacing: Space.sm) {
-                StackCover(screenshots: Array(collection.screenshots.prefix(3)), tint: Palette.brand, height: 64)
-                    .frame(width: 84)
-                    .matchedTransitionSource(id: CollectionKind.all.id, in: zoomNamespace)
+                // At accessibility sizes the words need the width more than the picture does
+                if !dynamicTypeSize.isAccessibilitySize {
+                    StackCover(screenshots: Array(collection.screenshots.prefix(3)), tint: Palette.brand, height: 64)
+                        .frame(width: 84)
+                        .matchedTransitionSource(id: CollectionKind.all.id, in: zoomNamespace)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Brand.Copy.Home.allScreenshots)
                         .font(.dsHeadline)

@@ -150,7 +150,8 @@ struct AnalysisPipeline: AnalysisPasses {
             if insight == nil {
                 let preliminary = ScreenshotClassifier.classify(features: features, entities: entities)
                 let topScore = preliminary.categories.first?.score ?? 0
-                let worthIt = features.fullText.count >= 40 || topScore < 0.75 || preliminary.categories.first?.category == .other
+                let worthIt = FMClassifier.isWorthAsking(features)
+                    && (features.fullText.count >= 40 || topScore < 0.75 || preliminary.categories.first?.category == .other)
                 if worthIt && FMClassifier.isAvailable {
                     needsModel = true
                 } else if !worthIt {

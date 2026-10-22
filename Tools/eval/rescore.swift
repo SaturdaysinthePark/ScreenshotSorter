@@ -109,7 +109,7 @@ func runRescore(database: String, out: URL, modelSample: Int = 0) async throws {
         }
         var modelNow: String?
         var afterWithModel: [String]?
-        if total % stride == 0 {
+        if total % stride == 0, FMClassifier.isWorthAsking(features) {
             if case .insight(let fresh) = await FMClassifier.shared.insight(for: features, appHint: output.app?.displayName) {
                 modelNow = String(format: "%@ +%@ %.1f \"%@\" tags=%@", fresh.primary?.key ?? "-",
                                   fresh.secondary.map(\.key).joined(separator: "/"), fresh.confidence, fresh.title,

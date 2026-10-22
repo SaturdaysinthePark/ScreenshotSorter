@@ -640,6 +640,16 @@ final class AppModel {
         Task { library.setSmartCollections(await smartEngine.delete(id: id)) }
     }
 
+    func addToSmartCollection(_ assetIDs: [String], collectionID: String) {
+        Task {
+            var collections = library.smartCollections
+            for assetID in assetIDs {
+                collections = await smartEngine.addMember(assetID, to: collectionID)
+            }
+            library.setSmartCollections(collections)
+        }
+    }
+
     func removeFromSmartCollection(_ assetIDs: [String], collectionID: String) {
         Task {
             var collections = library.smartCollections

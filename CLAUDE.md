@@ -44,7 +44,10 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
   - `FoundationModels/`: guided generation constrained to `TopicKey` (every non-app category; enforced by
     `CategoryKeySyncTests`). On iOS 27 the model also sees a 768px copy when `capabilities.contains(.vision)`
     (`FMClassifier.canSeeImages`; code behind `#if compiler(>=6.4)` so Xcode 26 still builds). Text-only
-    answers corroborate but never label alone; image-backed "sure" answers can. The model's wording is
+    answers corroborate, never label alone, and aren't asked about screenshots with <3 lines of text
+    (`FMClassifier.isWorthAsking`); the exception: a text-only "sure" topic fills the gap when nothing else
+    found one (`ScreenshotClassifier.modelGapScore`, not for events/receipts/codes/documents — its guesses
+    when it has no idea). Image-backed "sure" answers can label on their own. The model's wording is
     sensitive: field order, case order ("other" first) and instruction length each moved accuracy by 5–15
     points — measure with `Tools/eval/run.sh … --model` (macOS 26 runs it text-only), never by eye.
     Optional — everything works without it. No Private Cloud Compute: "nothing is uploaded" is a promise.

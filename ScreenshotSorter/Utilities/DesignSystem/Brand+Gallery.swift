@@ -76,6 +76,8 @@ extension Brand.Copy {
         // Quick actions (one per screenshot, chosen from what it's about)
         static func copyCode(_ code: String) -> String { "Copy code \(code)" }
         static let copyTracking: String = "Copy tracking number"
+        static let addToCollection: String = "Add to collection"
+        static func addedTo(_ name: String) -> String { "Added to \(name)" }
         static let openInMaps: String = "Open in Maps"
         static func openSite(_ site: String) -> String { "Open \(site)" }
         static let call: String = "Call"

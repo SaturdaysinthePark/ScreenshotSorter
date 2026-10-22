@@ -83,6 +83,7 @@ extension Brand.Copy {
         static let dismiss: String = "Not for me"
         static func count(_ value: Int) -> String { Brand.screenshots(value) }
         static let rename: String = "Rename"
+        static let renameConfirm: String = "Save"
         static let delete: String = "Remove collection"
         static let renamePrompt: String = "Collection name"
     }

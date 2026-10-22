@@ -61,6 +61,10 @@ enum ScreenshotClassifier {
     /// "likely" still needs another source to agree.
     static let modelImagePrimaryWeight = 0.75
     static let modelImageSecondaryWeight = 0.45
+    /// When rules and Vision found no topic inside an app (a TikTok post is just "TikTok"), a text-only "sure"
+    /// answer fills the gap: right ~3 in 4 there. Not for the topics the model falls back on when it has no idea.
+    static let modelGapScore = 0.55
+    static let modelFallbackTopics: Set<ScreenshotCategory> = [.events, .receipts, .codes, .documents, .other]
 
     /// Nothing says what the screenshot is about yet — only the app, a face-less "People", or "Other".
     /// These go first in the language-model lane, where seeing the post or product helps most.
@@ -131,7 +135,14 @@ enum ScreenshotClassifier {
             input.model = model
         }
 
-        let categories = SignalFusion.fuse(input, config: config)
+        var categories = SignalFusion.fuse(input, config: config)
+        if let insight, insight.sawImage != true, insight.confidence >= 0.9, let primary = insight.primary,
+           !modelFallbackTopics.contains(primary), needsTopic(categories.map(\.category)),
+           // Only inside an app's post (TikTok, Reddit…): on stand-alone ads its sure guesses were wrong as often as right
+           categories.contains(where: { $0.category.kind == .app }), user.overrides[primary] != false {
+            categories.removeAll { $0.category == .other || $0.category == primary }
+            categories.append(ScoredCategory(category: primary, score: modelGapScore, sources: .foundationModel))
+        }
 
         let entities: [ExtractedEntity]
         if let precomputedEntities {

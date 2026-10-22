@@ -53,13 +53,17 @@ Topic accuracy counts screenshots that have a topic to find; app-only cases don'
 | v1: 70 bare keys, 0–100 confidence, apps allowed | 59% | 26% | 0.856 vs 0.868 (hurts) | 1.69 s |
 | v2: + 16 lines of category definitions, "other" last | ~47% on a partial run (stopped) | | | |
 | C: summary first, topics only, "other" first, sure/likely/unsure, short prompt | 73% | 17% | 0.865 vs 0.866 | 1.45 s |
-| **E: C + plain topic names (`qrCode`, `paymentReceipt`, `code`) + merged categories** | **75%** | 10% | **0.885 vs 0.877 (helps)** | 1.43 s |
+| E: C + plain topic names (`qrCode`, `paymentReceipt`, `code`) + merged categories | 75% | 10% | 0.885 vs 0.877 (helps) | 1.43 s |
+| **F: E, not asked about screenshots with <3 text lines; a "sure" topic fills gaps inside apps** | **82% when asked** (84% held-out) | 10% | **0.880 vs 0.874; held-out 0.847 vs 0.836** | 1.44 s, **~30% fewer calls** |
 
 What moved the numbers:
 - The model defaults to the first enum case when unsure. "Events" first meant boarding passes became events; "other" first makes doubt safe.
 - Case names are read literally. `codes` (QR codes) collected code screenshots, and `receipts` took every price tag.
 - Long definitions hurt this small model; one-line instructions do better.
 - Describing before choosing helps.
+- Without the image, the model answers "receipts" or "events" for almost every photo, so photos aren't sent to a
+  text-only model. Inside a TikTok/Reddit post with no other topic, its "sure" answers were right about 3 in 4
+  times. On stand-alone ads it was about a coin flip, so filling the gap is limited to app posts.
 - The extra picks field helps the main pick when present, even though its own picks are mostly wrong. It is kept in the schema, but text-only fusion ignores it.
 
 On iOS 26 the model only reads OCR text, and on a TikTok or Instagram post the text is mostly chrome

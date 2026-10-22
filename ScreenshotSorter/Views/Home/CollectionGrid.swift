@@ -12,6 +12,12 @@ struct CollectionGrid: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showAll = false
     @State private var showNew = false
+    @State private var renaming: RenameTarget?
+
+    private struct RenameTarget: Identifiable {
+        let id: String
+        var name: String
+    }
 
     /// Six rows on a phone: enough to see what was found, short enough to scan
     static let collapsedCount = 12
@@ -27,12 +33,15 @@ struct CollectionGrid: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
-            HStack {
+            let header = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs))
+                : AnyLayout(HStackLayout())
+            header {
                 Text(Brand.Copy.Home.collectionsTitle)
                     .font(.dsTitle2)
                     .foregroundStyle(Palette.ink)
                     .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
                 Button {
                     HapticManager.shared.lightTap()
                     showNew = true
@@ -51,9 +60,16 @@ struct CollectionGrid: View {
                     }
                     .pressable()
                     .contextMenu {
-                        if let onDelete, case .smart = collection.kind {
-                            Button(role: .destructive) { onDelete(collection.kind) } label: {
-                                Label(Brand.Copy.Smart.delete, systemImage: "trash")
+                        if case .smart(let id) = collection.kind {
+                            Button {
+                                renaming = RenameTarget(id: id, name: collection.title)
+                            } label: {
+                                Label(Brand.Copy.Smart.rename, systemImage: "pencil")
+                            }
+                            if let onDelete {
+                                Button(role: .destructive) { onDelete(collection.kind) } label: {
+                                    Label(Brand.Copy.Smart.delete, systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -74,6 +90,17 @@ struct CollectionGrid: View {
         }
         .sheet(isPresented: $showNew) {
             NewCollectionSheet()
+        }
+        .alert(Brand.Copy.Smart.rename, isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(Brand.Copy.Smart.renamePrompt, text: Binding(
+                get: { renaming?.name ?? "" }, set: { renaming?.name = $0 }))
+            Button(Brand.Copy.Smart.renameConfirm) {
+                if let renaming, !renaming.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                    model.renameSmartCollection(renaming.id, to: renaming.name.trimmingCharacters(in: .whitespaces))
+                }
+                renaming = nil
+            }
+            Button(Brand.Copy.NewCollection.cancel, role: .cancel) { renaming = nil }
         }
     }
 }
