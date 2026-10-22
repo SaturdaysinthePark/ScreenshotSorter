@@ -51,6 +51,23 @@ actor SearchService {
 
     /// Meaning matches must be this close when OCR text doesn't count
     static let whatItShowsSemanticFloor: Float = 0.55
+    /// Times a name must appear in a screenshot's text for the text alone to put it in a collection
+    static let mentionRepeats = 2
+
+    /// Whole-word occurrences of any of the terms (singular or plural) in `text`
+    static func occurrences(of terms: [String], in text: String) -> Int {
+        let tokens = TextNormalizer.tokenize(text.lowercased())
+        let forms = Set(terms.flatMap { term -> [String] in
+            let lowered = term.lowercased()
+            return [lowered, TextNormalizer.stem(lowered), lowered + "s"]
+        })
+        let singleWords = forms.filter { !$0.contains(" ") }
+        let phrases = forms.filter { $0.contains(" ") }
+        var count = tokens.filter { singleWords.contains($0) || singleWords.contains(TextNormalizer.stem($0)) }.count
+        let joined = " " + tokens.joined(separator: " ") + " "
+        for phrase in phrases { count += joined.components(separatedBy: " " + phrase + " ").count - 1 }
+        return count
+    }
 
     func search(_ query: ParsedQuery, context: SearchContext, scope: SearchScope = .everything, now: Date = Date()) async -> [SearchHit] {
         guard !query.isEmpty else { return [] }
@@ -67,12 +84,14 @@ actor SearchService {
         await refreshVocabularyIfNeeded()
 
         // Lexical
-        func scoped(_ expression: String) -> String {
-            scope == .whatItShows ? "{title tags} : (" + expression + ")" : expression
+        func expression(_ joiner: String) -> String {
+            scope == .whatItShows
+                ? "{title tags} : (" + wholeWordExpression(query, joiner: joiner) + ")"
+                : matchExpression(query, joiner: joiner)
         }
-        var lexical = await store.ftsSearch(match: scoped(matchExpression(query, joiner: " ")), limit: SearchService.maxResults)
+        var lexical = await store.ftsSearch(match: expression(" "), limit: SearchService.maxResults)
         if lexical.isEmpty && query.terms.count > 1 {
-            lexical = await store.ftsSearch(match: scoped(matchExpression(query, joiner: " OR ")), limit: SearchService.maxResults)
+            lexical = await store.ftsSearch(match: expression(" OR "), limit: SearchService.maxResults)
         }
         if !store.isFTSAvailable && scope == .everything {
             let ids = await store.likeSearch(query.freeText, limit: SearchService.maxResults)
@@ -88,8 +107,21 @@ actor SearchService {
         // Semantic
         var semantic: [(id: String, similarity: Float)] = []
         if let vector = await embedder.embed(query.freeText) {
-            let floor = scope == .whatItShows ? SearchService.whatItShowsSemanticFloor : SearchService.semanticFloor
-            semantic = await vectors.textNearest(to: vector, k: 200, minimum: floor)
+            semantic = await vectors.textNearest(to: vector, k: 400, minimum: SearchService.semanticFloor)
+        }
+
+        // Collections: a word on screen counts when it's repeated (a caption and its hashtag, "best matcha… #matcha"),
+        // not when it's said once in passing ("this girl is on fire" in a comment). Meaning alone can't decide:
+        // the sentence embedding scores a one-word name against a whole screenshot near zero either way.
+        if scope == .whatItShows {
+            let mentions = await store.ftsSearch(match: "{ocr} : (" + wholeWordExpression(query, joiner: " ") + ")",
+                                                 limit: SearchService.maxResults)
+            let known = Set(lexical.map(\.id))
+            let candidates = mentions.filter { !known.contains($0.id) }
+            let texts = await store.ocrTexts(ids: candidates.map(\.id))
+            lexical += candidates.filter { hit in
+                SearchService.occurrences(of: query.terms + query.phrases, in: texts[hit.id] ?? "") >= SearchService.mentionRepeats
+            }
         }
 
         // Reciprocal rank fusion
@@ -102,7 +134,8 @@ actor SearchService {
         for (rank, id) in trigram.enumerated() {
             scores[id, default: 0] += SearchService.trigramWeight / (SearchService.rrfK + Double(rank + 1))
         }
-        for (rank, hit) in semantic.enumerated() {
+        let rankedSemantic = scope == .whatItShows ? semantic.filter { $0.similarity >= SearchService.whatItShowsSemanticFloor } : semantic
+        for (rank, hit) in rankedSemantic.prefix(200).enumerated() {
             scores[hit.id, default: 0] += SearchService.semanticWeight / (SearchService.rrfK + Double(rank + 1))
         }
 
@@ -170,6 +203,18 @@ actor SearchService {
             } else {
                 clauses.append("(" + ([base] + corrections.map { SearchService.quote($0) }).joined(separator: " OR ") + ")")
             }
+        }
+        return clauses.joined(separator: joiner)
+    }
+
+    /// Whole words only, singular or plural, no typo guesses: a collection called "cars" must not fill up with
+    /// cardholders, card games and pizza cartons (all `car*`)
+    func wholeWordExpression(_ query: ParsedQuery, joiner: String) -> String {
+        var clauses: [String] = query.phrases.map { SearchService.quote($0) }
+        for term in query.terms {
+            var forms: Set<String> = [term, TextNormalizer.stem(term)]
+            if !term.hasSuffix("s") { forms.insert(term + "s") }
+            clauses.append("(" + forms.sorted().map { SearchService.quote($0) }.joined(separator: " OR ") + ")")
         }
         return clauses.joined(separator: joiner)
     }

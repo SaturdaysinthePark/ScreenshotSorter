@@ -69,6 +69,8 @@ all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSyst
    (see `Tools/eval/README.md`); `failures.py` explains every miss. Check the held-out set before calling a win,
    and re-score a real library copy (`run.sh --db`) — feeds, ads and garbled OCR expose mistakes the corpus can't.
    On real libraries the language model's lone guesses and single weak clues were mostly wrong: prefer "Other".
+   The real measure is the blind judge on the owner's own screenshots (`Tools/eval/judge/README.md`, Debug-only
+   `-QAExportScreenshots`); its data stays in git-ignored `build/phone`.
 1. Edit rules in `Analysis/Rules/` (or fusion weights in `FusionConfig`).
 2. Add/adjust cases in `ScreenshotSorterTests/Fixtures/golden_features.json` (export real ones from
    the DEBUG "Evaluation" screen in the home ⋯ menu, scrub personal text).

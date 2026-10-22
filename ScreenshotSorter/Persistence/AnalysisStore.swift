@@ -525,6 +525,18 @@ actor AnalysisStore {
         return ids
     }
 
+    /// OCR text for a handful of ids (collection matching counts how often a word appears)
+    func ocrTexts(ids: [String]) -> [String: String] {
+        var texts: [String: String] = [:]
+        for chunk in stride(from: 0, to: ids.count, by: 200).map({ Array(ids[$0..<min($0 + 200, ids.count)]) }) {
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+            try? db.query("SELECT id, ocr_text FROM assets WHERE id IN (\(placeholders))", chunk.map { .text($0) }) { row in
+                if let id = row.text(0) { texts[id] = row.text(1) ?? "" }
+            }
+        }
+        return texts
+    }
+
     /// Indexed vocabulary (for typo correction)
     func vocabulary(minimumDocuments: Int = 1) -> [String] {
         guard isFTSAvailable else { return [] }

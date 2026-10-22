@@ -21,6 +21,10 @@ sources=(
   $root/Tools/eval/main.swift
   $root/Tools/eval/rescore.swift
   $root/Tools/eval/model.swift
+  $root/Tools/eval/collections.swift
+  $app/Persistence/AnalysisStore.swift
+  $app/Persistence/SQLiteDatabase.swift
+  $app/Search/*.swift
   $app/Analysis/FoundationModels/*.swift
 )
 newest=$(ls -t $sources | head -1)

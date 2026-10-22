@@ -78,8 +78,8 @@ enum CategoryRules {
         CategoryRule(
             category: .notes,
             strong: ["to do": 0.5, "todo": 0.55, "checklist": 0.6, "shopping list": 0.8, "grocery list": 0.85,
-                     "reminders": 0.55, "new note": 0.8, "notes": 0.35],
-            weak: ["list": 0.2, "remember": 0.25, "buy": 0.15, "ideas": 0.25, "done": 0.15]
+                     "new note": 0.8, "notes": 0.35],
+            weak: ["reminders": 0.25, "list": 0.2, "remember": 0.25, "buy": 0.15, "ideas": 0.25, "done": 0.15]
         ),
         CategoryRule(
             category: .programming,
@@ -103,11 +103,11 @@ enum CategoryRules {
             category: .finance,
             strong: ["available balance": 0.85, "account balance": 0.8, "routing number": 0.85,
                      "account number": 0.6, "direct deposit": 0.8, "venmo": 0.75, "zelle": 0.8,
-                     "cash app": 0.8, "paypal": 0.6, "portfolio": 0.55, "dividend": 0.75, "stocks": 0.3,
+                     "cash app": 0.8, "portfolio": 0.55, "dividend": 0.75, "stocks": 0.3,
                      "crypto": 0.45, "bitcoin": 0.7, "robinhood": 0.85, "credit score": 0.85,
-                     "statement balance": 0.85, "minimum payment": 0.85, "apr": 0.5, "transfer": 0.3,
+                     "statement balance": 0.85, "minimum payment": 0.85, "transfer": 0.3,
                      "you sent": 0.6, "you received": 0.55, "split the bill": 0.7, "budget": 0.4],
-            weak: ["balance": 0.25, "deposit": 0.3, "withdrawal": 0.35, "savings": 0.3, "checking": 0.25,
+            weak: ["paypal": 0.3, "apr": 0.1, "balance": 0.25, "deposit": 0.3, "withdrawal": 0.35, "savings": 0.3, "checking": 0.25,
                    "pending": 0.15, "transactions": 0.3, "bank": 0.3, "card": 0.1],
             patterns: [.priceCount(min: 3, weight: 0.2)],
             negative: ["in stock", "add to cart"]
@@ -125,13 +125,15 @@ enum CategoryRules {
                      "temu": 0.7, "checkout": 0.55, "limited time deal": 0.8],
             weak: ["sale": 0.25, "price": 0.2, "shipping": 0.2, "ratings": 0.2, "shop": 0.2,
                    "deal": 0.2, "discount": 0.3, "off": 0.05, "size": 0.15, "color": 0.1],
-            patterns: [.priceCount(min: 1, weight: 0.15)]
+            patterns: [.priceCount(min: 1, weight: 0.15)],
+            // A ticket checkout has prices and "Buy now" too
+            negative: ["tickets", "seats"]
         ),
         CategoryRule(
             category: .orders,
             strong: ["order confirmed": 0.85, "order number": 0.7, "tracking number": 0.85,
                      "out for delivery": 0.9, "has shipped": 0.85, "your order": 0.6, "estimated delivery": 0.85,
-                     "arriving": 0.5, "delivered": 0.45, "track package": 0.9, "shipment": 0.6, "ups": 0.4,
+                     "arriving": 0.5, "delivered": 0.45, "track package": 0.9, "shipment": 0.4, "ups": 0.4,
                      "fedex": 0.6, "usps": 0.6, "dhl": 0.6],
             weak: ["order": 0.25, "shipping": 0.25, "package": 0.3, "delivery": 0.25, "carrier": 0.3]
         ),
@@ -149,8 +151,14 @@ enum CategoryRules {
             category: .books,
             strong: ["isbn": 0.9, "paperback": 0.8, "hardcover": 0.8, "kindle edition": 0.85, "goodreads": 0.85,
                      "audiobook": 0.75, "new york times bestseller": 0.85, "chapter": 0.4, "author": 0.35,
-                     "want to read": 0.85, "currently reading": 0.75, "storygraph": 0.85],
-            weak: ["book": 0.3, "novel": 0.35, "read": 0.1, "pages": 0.15, "series": 0.15]
+                     "want to read": 0.85, "currently reading": 0.75, "storygraph": 0.85,
+                     // How book posts actually talk (TikTok #booktok, Reddit, publishers)
+                     "bookstore": 0.7, "booktok": 0.85, "book club": 0.75, "bookclub": 0.75,
+                     "book recommendations": 0.85, "suggestmeabook": 0.9, "booksuggestions": 0.9, "tbr": 0.5,
+                     "translated by": 0.6, "penguin classics": 0.85, "new york review books": 0.85, "nyrb": 0.75,
+                     "novel": 0.45, "novella": 0.6, "bookshop": 0.7, "literary prize": 0.7],
+            weak: ["book": 0.3, "read": 0.1, "pages": 0.15, "series": 0.15, "fiction": 0.25, "author": 0.2,
+                   "reading": 0.2, "edition": 0.15, "manga": 0.3]
         ),
         CategoryRule(
             category: .books,
@@ -207,7 +215,9 @@ enum CategoryRules {
                      "confirmation code": 0.55, "check in": 0.3, "layover": 0.85, "nonstop": 0.75,
                      "itinerary": 0.6, "airbnb": 0.7, "booking.com": 0.75, "expedia": 0.75, "hotel": 0.4,
                      "check-in": 0.35, "baggage": 0.7, "carry-on": 0.7, "delta": 0.3,
-                     "united": 0.15, "american airlines": 0.85, "southwest": 0.5, "jetblue": 0.85],
+                     "united": 0.15, "american airlines": 0.85, "southwest": 0.5, "jetblue": 0.85,
+                     "evisa": 0.85, "visa issuance": 0.85, "travel guide": 0.7, "things to do in": 0.6,
+                     "where to stay": 0.6, "weekend getaway": 0.7, "getaway": 0.45],
             // "a recent arrival", "your reservation at CUT": shops and restaurants use these too
             weak: ["arrival": 0.3, "reservation": 0.3, "gate": 0.25, "seat": 0.15, "airport": 0.35, "trip": 0.2, "travel": 0.2, "passenger": 0.4,
                    "depart": 0.3, "arrive": 0.2, "nights": 0.2, "guests": 0.2]
@@ -225,6 +235,9 @@ enum CategoryRules {
         CategoryRule(
             category: .places,
             strong: ["open now": 0.4, "closes": 0.35, "reviews": 0.15, "yelp": 0.7, "tripadvisor": 0.75,
+                     // TikTok's place tag on a post
+                     "posted about this place": 0.65, "featured this place": 0.65, "concept store": 0.6,
+                     "flagship": 0.45, "coffee shop": 0.5, "gift shop": 0.5,
                      "google maps": 0.5, "save place": 0.7, "add to guide": 0.7, "neighborhood": 0.35],
             weak: ["address": 0.3, "located": 0.25, "visit": 0.2, "area": 0.1, "nearby": 0.3, "hours": 0.2,
                    "ratings": 0.2, "closed": 0.15, "website": 0.15],
@@ -237,15 +250,16 @@ enum CategoryRules {
         CategoryRule(
             category: .places,
             strong: ["museum": 0.6, "national park": 0.75, "landmark": 0.6, "monument": 0.65, "cathedral": 0.6,
+                     "temple": 0.5, "mosque": 0.6, "shrine": 0.5, "gallery": 0.45,
                      "tourist attraction": 0.8, "unesco": 0.8, "historic site": 0.8],
             weak: ["tour": 0.25, "visit": 0.15, "history": 0.2, "gallery": 0.2]
         ),
         CategoryRule(
             category: .homes,
-            strong: ["zillow": 0.85, "redfin": 0.85, "for sale": 0.45, "for rent": 0.55, "sq ft": 0.75, "sqft": 0.75,
-                     "bedrooms": 0.6, "bathrooms": 0.5, "beds baths": 0.7, "open house": 0.8, "listing": 0.3,
+            strong: ["zillow": 0.85, "redfin": 0.85, "for rent": 0.55, "sq ft": 0.75, "sqft": 0.75,
+                     "bedrooms": 0.6, "bathrooms": 0.5, "beds baths": 0.7, "open house": 0.8,
                      "apartments.com": 0.85, "streeteasy": 0.85, "per month": 0.25],
-            weak: ["bed": 0.15, "bath": 0.2, "rent": 0.25, "lease": 0.2, "home": 0.1, "apartment": 0.3]
+            weak: ["for sale": 0.25, "listing": 0.25, "bed": 0.15, "bath": 0.2, "rent": 0.25, "lease": 0.2, "home": 0.1, "apartment": 0.3]
         )
     ]
 
@@ -282,7 +296,9 @@ enum CategoryRules {
                      "servings": 0.6, "tablespoon": 0.75, "tbsp": 0.8, "tsp": 0.75, "teaspoon": 0.75,
                      "preheat": 0.85, "recipe": 0.7, "cups flour": 0.9],
             weak: ["cup": 0.15, "cups": 0.2, "oz": 0.15, "bake": 0.3, "stir": 0.3, "mix": 0.2, "minutes": 0.05,
-                   "salt": 0.2, "pepper": 0.15, "garlic": 0.25, "butter": 0.25, "sugar": 0.2]
+                   "salt": 0.2, "pepper": 0.15, "garlic": 0.25, "butter": 0.25, "sugar": 0.2],
+            // Fujifilm's film-simulation "recipes" are camera settings
+            negative: ["film simulation", "fujifilm", "grain effect", "dynamic range"]
         ),
         CategoryRule(
             category: .recipes,
@@ -294,10 +310,14 @@ enum CategoryRules {
             category: .food,
             strong: ["doordash": 0.75, "uber eats": 0.75, "grubhub": 0.75, "appetizers": 0.75,
                      "entrees": 0.75, "reservation": 0.2, "opentable": 0.75, "resy": 0.75, "brunch": 0.5,
-                     "restaurant": 0.4],
+                     "restaurant": 0.45, "eats": 0.45, "foodie": 0.6, "foodtiktok": 0.85, "cheap eats": 0.8,
+                     "omakase": 0.7, "bib gourmand": 0.85, "michelin": 0.55, "bakery": 0.55, "food crawl": 0.8,
+                     "must eat": 0.7, "must-eat": 0.7],
             // "Menu" alone is a hamburger button on half the web
             weak: ["menu": 0.35, "pizza": 0.3, "burger": 0.3, "sushi": 0.35, "tacos": 0.35, "salad": 0.25, "pasta": 0.3,
-                   "chicken": 0.2, "dessert": 0.3, "breakfast": 0.25, "lunch": 0.25, "dinner": 0.25, "food": 0.25,
+                   "chicken": 0.2, "dessert": 0.3, "breakfast": 0.25, "lunch": 0.25, "dinner": 0.25, "food": 0.3,
+                   "ramen": 0.35, "noodles": 0.3, "dumplings": 0.35, "biryani": 0.4, "bbq": 0.3, "burritos": 0.35,
+                   "croissant": 0.3, "sandwich": 0.3, "pastry": 0.3, "steak": 0.3, "bread": 0.2,
                    "delicious": 0.3, "yummy": 0.3]
         ),
         CategoryRule(
@@ -332,15 +352,15 @@ enum CategoryRules {
         ),
         CategoryRule(
             category: .weather,
-            strong: ["feels like": 0.6, "chance of rain": 0.85, "uv index": 0.85, "humidity": 0.6,
+            strong: ["chance of rain": 0.85, "uv index": 0.85, "humidity": 0.6,
                      "precipitation": 0.75, "hourly forecast": 0.9, "10-day forecast": 0.9, "air quality": 0.6,
                      "forecast": 0.5, "wind": 0.15, "sunrise": 0.2, "sunset": 0.15],
-            weak: ["rain": 0.2, "cloudy": 0.35, "sunny": 0.3, "storm": 0.25, "snow": 0.2, "high": 0.05, "low": 0.05],
+            weak: ["feels like": 0.3, "rain": 0.2, "cloudy": 0.35, "sunny": 0.3, "storm": 0.25, "snow": 0.2, "high": 0.05, "low": 0.05],
             patterns: [.countOf(["mostly cloudy", "partly cloudy", "mostly sunny", "clear", "showers", "thunderstorms"], min: 1, weight: 0.5)]
         ),
         CategoryRule(
             category: .aiChats,
-            strong: ["chatgpt": 0.85, "message chatgpt": 0.95, "ask anything": 0.6, "claude": 0.5,
+            strong: ["chatgpt": 0.45, "message chatgpt": 0.95, "ask anything": 0.6, "claude": 0.5,
                      "reply to claude": 0.95, "how can i help you today": 0.75, "gemini": 0.4, "ask gemini": 0.9,
                      "perplexity": 0.7, "copilot": 0.5, "can make mistakes": 0.85, "regenerate": 0.6, "new chat": 0.5],
             weak: ["prompt": 0.25, "model": 0.1, "ai": 0.2, "assistant": 0.2, "generate": 0.2]
@@ -381,12 +401,13 @@ enum CategoryRules {
         CategoryRule(
             category: .errors,
             strong: ["something went wrong": 0.9, "an error occurred": 0.9, "error": 0.35, "failed to": 0.6,
-                     "try again": 0.35, "not found": 0.4, "404": 0.6, "500 internal server error": 0.95,
-                     "unexpected error": 0.9, "unable to": 0.45, "crash": 0.5, "exception": 0.55,
+                     "try again": 0.35, "not found": 0.4, "error 404": 0.85, "404 error": 0.85,
+                     "didn't find anything": 0.6, "page doesn't exist": 0.8, "500 internal server error": 0.95,
+                     "unexpected error": 0.9, "unable to": 0.45, "crash": 0.5,
                      "cannot connect": 0.7, "no internet connection": 0.85, "access denied": 0.75,
                      "can't open the page": 0.9, "server can't be found": 0.85, "can't be found": 0.5,
                      "not connected to the internet": 0.9, "page not found": 0.85],
-            weak: ["failed": 0.25, "problem": 0.2, "issue": 0.15, "bug": 0.35, "retry": 0.3, "oops": 0.4]
+            weak: ["404": 0.25, "exception": 0.25, "failed": 0.25, "problem": 0.2, "issue": 0.15, "bug": 0.35, "retry": 0.3, "oops": 0.4]
         )
     ]
 

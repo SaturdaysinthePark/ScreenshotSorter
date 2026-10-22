@@ -31,6 +31,8 @@ struct Args {
     var model = false
     /// With --db --model: how many screenshots to send to the model (spread evenly over the library)
     var limit = 120
+    /// With --db: comma-separated collection names to search for (see collections.swift)
+    var collections: [String] = []
     var out: URL?
     var concurrency = max(2, ProcessInfo.processInfo.activeProcessorCount - 2)
 
@@ -50,6 +52,7 @@ struct Args {
             case "--db": database = it.next()
             case "--model": model = true
             case "--limit": limit = Int(it.next()!) ?? limit
+            case "--collections": collections = it.next()!.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             case "--out": out = URL(fileURLWithPath: it.next()!)
             case "--jobs": concurrency = Int(it.next()!) ?? concurrency
             default: fatalError("unknown argument \(arg)")
@@ -218,6 +221,11 @@ func exportGolden(_ items: [(ManifestEntry, ExtractedFeatures)], to url: URL) th
 struct EvalMain {
     static func main() async throws {
         let args = Args()
+        if let database = args.database, !args.collections.isEmpty {
+            try await runCollections(database: database, queries: args.collections,
+                                     out: args.out ?? URL(fileURLWithPath: "build/eval/collections.json"))
+            return
+        }
         if let database = args.database {
             try await runRescore(database: database, out: args.out ?? URL(fileURLWithPath: "build/eval/rescore.jsonl"),
                                  modelSample: args.model ? args.limit : 0)

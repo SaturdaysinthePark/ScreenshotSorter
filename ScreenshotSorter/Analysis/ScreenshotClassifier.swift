@@ -47,6 +47,8 @@ enum ScreenshotClassifier {
     static let photoLineCount = 8
     static let textHeavyLineCount = 30
     static let textHeavyVisionScale = 0.45
+    /// Lines an app's own UI adds to every screenshot of it (tab bar, counters, handles)
+    static let appChromeLines = 12
     /// People in a painting are art, not "People"
     static let artSuppressesPeople = 0.6
     /// The language model only sees OCR text and reports ~0.9 confidence whatever it decides. On a real
@@ -106,7 +108,9 @@ enum ScreenshotClassifier {
 
         var input = FusionInput()
         var vision = VisionLabelMap.categoryScores(for: features.labels)
-        let scale = visionScale(lineCount: contentLines)
+        // TikTok's and Instagram's own buttons and counters are ~a dozen lines: they don't make a post text-heavy
+        let appChrome = appMatches.first.map { $0.category?.kind == .app ? appChromeLines : 0 } ?? 0
+        let scale = visionScale(lineCount: max(0, contentLines - appChrome))
         if scale < 1 {
             for (category, score) in vision where category.kind == .visual || category.kind == .mixed {
                 vision[category] = score * scale
@@ -119,7 +123,10 @@ enum ScreenshotClassifier {
         }
         input.vision = vision
         input.rules = ruleScores
-        input.apps = appMatches
+        // A screenshot comes from one social or chat app: a weaker second one ("For you · Following" on TikTok
+        // reads as X too) is noise. Store and map apps (Amazon → Shopping, Maps → Places) still count.
+        let socialApp = appMatches.first { $0.category?.kind == .app }
+        input.apps = appMatches.filter { $0.category?.kind != .app || $0.appID == socialApp?.appID }
         input.barcodes = features.barcodes
         input.faces = faces
         input.userKNN = user.knn
@@ -141,8 +148,9 @@ enum ScreenshotClassifier {
         var categories = SignalFusion.fuse(input, config: config)
         if let insight, insight.sawImage != true, insight.confidence >= 0.9, let primary = insight.primary,
            !modelFallbackTopics.contains(primary), needsTopic(categories.map(\.category)),
-           // Only inside an app's post (TikTok, Reddit…): on stand-alone ads its sure guesses were wrong as often as right
-           categories.contains(where: { $0.category.kind == .app }), user.overrides[primary] != false {
+           // Only inside an app's post (TikTok, Reddit…), and not on ads: there its sure guesses were a coin flip
+           categories.contains(where: { $0.category.kind == .app }), !text.contains(normalized: "sponsored"),
+           user.overrides[primary] != false {
             categories.removeAll { $0.category == .other || $0.category == primary }
             categories.append(ScoredCategory(category: primary, score: modelGapScore, sources: .foundationModel))
         }

@@ -38,7 +38,7 @@ enum VisionLabelMap {
         (.jewelry, 0.95, ["jewelry", "jewellery", "necklace", "ring", "earring", "earrings", "bracelet", "pendant",
                           "diamond", "gemstone"]),
         (.furniture, 0.9, ["furniture", "chair", "sofa", "couch", "table", "desk", "bed", "lamp", "shelf",
-                           "bookcase", "cabinet", "dresser", "armchair", "stool", "bench"]),
+                           "bookcase", "cabinet", "dresser", "armchair", "stool", "bench", "bookshelf"]),
         (.homes, 0.8, ["house", "home", "interior", "room", "bedroom", "bathroom", "livingroom", "apartment",
                        "residential", "villa", "cottage", "mansion", "patio", "porch", "balcony", "roof", "chimney"]),
         (.vehicles, 0.95, ["vehicle", "car", "automobile", "truck", "motorcycle", "bicycle", "bike", "suv", "sedan",
@@ -64,7 +64,10 @@ enum VisionLabelMap {
                              "mall", "signage"]),
         (.art, 0.85, ["art", "painting", "drawing", "sketch", "illustration", "sculpture", "mural", "graffiti",
                       "artwork", "canvas", "watercolor"]),
-        (.books, 0.7, ["book", "books", "bookshelf", "novel", "magazine", "library"]),
+        (.books, 0.7, ["book", "books", "novel", "magazine", "library"]),
+        (.books, 0.55, ["bookshelf"]),
+        // A map with no place card or route on it is still about a place
+        (.places, 0.6, ["map"]),
         // Not "document": Vision says it about nearly every screenshot (0.8–0.9 on chats, maps, feeds)
         (.documents, 0.55, ["page", "paper", "letter", "form", "receipt", "invoice"]),
         (.receipts, 0.7, ["receipt", "invoice"]),
@@ -126,6 +129,11 @@ enum VisionLabelMap {
     /// (Vision reports "plant" at 0.9 and "flower" at 0.3 for a rose).
     static let specificOverGeneric: [(specific: ScreenshotCategory, generic: ScreenshotCategory)] = []
     static let specificMinimum = 0.25
+    static let outdoorConfidence = 0.6
+    static let outdoorPlantScale = 0.4
+    /// Named plants stay Plants even outdoors (a saguaro, a fern)
+    static let specificPlantTokens: Set<String> = ["cactus", "succulent", "fern", "ferns", "houseplant", "potted", "aloe",
+                                                   "monstera", "bonsai", "orchid"]
 
     /// Per-category score: max over labels of confidence × mapping weight, then scene/subject adjustments.
     static func categoryScores(for labels: [VisionLabel]) -> [ScreenshotCategory: Double] {
@@ -149,6 +157,14 @@ enum VisionLabelMap {
             if let specificScore = scores[specific], specificScore >= specificMinimum, let genericScore = scores[generic] {
                 scores[specific] = max(specificScore, genericScore * 0.9)
             }
+        }
+        // A palm tree under open sky is a landscape, not a houseplant
+        let outdoors = labels.contains { ["outdoor", "sky", "blue_sky"].contains($0.identifier) && $0.confidence >= outdoorConfidence }
+        let specificPlant = labels.contains { label in
+            label.confidence >= specificMinimum && tokens(of: label.identifier).contains { specificPlantTokens.contains($0) }
+        }
+        if outdoors, !specificPlant, let plants = scores[.plants] {
+            scores[.plants] = plants * outdoorPlantScale
         }
         let hasSubject = foregroundCategories.contains { (scores[$0] ?? 0) >= foregroundThreshold }
         if hasSubject {

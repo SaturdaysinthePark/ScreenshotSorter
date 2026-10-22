@@ -24,6 +24,31 @@ struct SearchAndLearningTests {
         #expect(collection == ["shows"])
     }
 
+    /// "cars" is cars, not `car*` (cardholders, card games, pizza cartons); a caption counts when it repeats the
+    /// word (caption + hashtag), not when a comment says it once.
+    @Test func collectionMatchingIsWholeWordAndNeedsRepeats() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("coll-\(UUID().uuidString).sqlite").path
+        let store = try AnalysisStore(path: path)
+        guard store.isFTSAvailable else { return }
+        func record(_ id: String, tags: [String] = [], ocr: String = "") -> AnalysisRecord {
+            var record = AnalysisRecord(id: id, createdAt: Date())
+            record.tags = tags.map { ScreenshotTag(value: $0, score: 0.8, sources: .visionClassifier) }
+            record.ocrText = ocr
+            return record
+        }
+        await store.upsert([record("car", tags: ["car"]), record("card", tags: ["cardholder"]),
+                            record("matcha", ocr: "best matcha in kyoto #matcha #tokyo"),
+                            record("once", ocr: "great post, reminds me of matcha")])
+        let search = SearchService(store: store, vectors: VectorIndex())
+        var context = SearchContext()
+        for id in ["car", "card", "matcha", "once"] { context.dates[id] = Date() }
+        let cars = await search.search(QueryParser.parse("cars"), context: context, scope: .whatItShows).map(\.id)
+        #expect(cars == ["car"])
+        let matcha = await search.search(QueryParser.parse("matcha"), context: context, scope: .whatItShows).map(\.id)
+        #expect(matcha == ["matcha"])
+        #expect(SearchService.occurrences(of: ["matcha"], in: "Best Matcha… #matcha") == 2)
+    }
+
     @Test func editDistance() {
         #expect(SearchService.editDistance("recipt", "receipt", limit: 2) == 1)
         #expect(SearchService.editDistance("kitten", "sitting", limit: 3) == 3)

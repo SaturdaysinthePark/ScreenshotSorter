@@ -9,7 +9,7 @@ import Foundation
 /// - `embedding`: re-embed stored text
 enum PipelineVersion {
     static let vision = 2
-    static let rules = 5
+    static let rules = 6
     static let fm = 2
     static let embedding = 1
 }

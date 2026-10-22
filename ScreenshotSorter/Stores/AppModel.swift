@@ -199,6 +199,11 @@ final class AppModel {
         isLibraryLoaded = true
         startObserver()
         await reconcile(assets: assets)
+        #if DEBUG
+        // QA: `-QAExportScreenshots <count>` writes previews for the judge eval (see Services/QAExport.swift)
+        let items = assets.map { (id: $0.localIdentifier, date: $0.creationDate ?? .distantPast) }
+        Task.detached(priority: .utility) { await QAExport.runIfRequested(ids: items) }
+        #endif
     }
 
     /// Decide what needs (re)analysis by comparing the library with stored pipeline state.
