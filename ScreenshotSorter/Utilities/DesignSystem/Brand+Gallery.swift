@@ -84,7 +84,26 @@ extension Brand.Copy {
         static let textCopied: String = "Text copied"
         static let showMore: String = "Show more"
         static let showLess: String = "Show less"
-        static let actions: String = "Quick actions"
+        static let actions: String = "Details"
+        static func detailKind(_ type: EntityType) -> String {
+            switch type {
+            case .address: return "Address"
+            case .url: return "Link"
+            case .phone: return "Phone"
+            case .email: return "Email"
+            case .oneTimeCode: return "Code"
+            case .tracking: return "Tracking number"
+            case .flight: return "Flight"
+            case .date: return "Date"
+            case .price: return "Price"
+            case .place: return "Place"
+            case .person: return "Person"
+            case .organization: return "Organization"
+            }
+        }
+        static func open(_ value: String) -> String { "Open \(value)" }
+        static func copyValue(_ value: String) -> String { "Copy \(value)" }
+        static func lines(_ count: Int) -> String { count == 1 ? "1 line" : "\(count) lines" }
         static let similar: String = "Looks similar"
         static let edit: String = "Edit"
         static let noTags: String = "No tags yet"

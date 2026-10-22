@@ -1130,6 +1130,9 @@ private struct InsightDrawer: View {
     @State private var jumpable: Set<String> = []
     @State private var loadedID: String?
     @State private var isTextExpanded: Bool = false
+    /// Long, rarely needed sections start closed so the details that matter fit on screen
+    @State private var isTextOpen: Bool = false
+    @State private var isSimilarOpen: Bool = false
 
     @State private var dragTracking: Bool = false
     @State private var lastDrag: CGSize = .zero
@@ -1209,11 +1212,16 @@ private struct InsightDrawer: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Tags that add something: not the app (it's in the subtitle) or a collection (they're under the title)
     private var tagModels: [ScreenshotTag] {
-        if let record, !record.tags.isEmpty {
-            return record.tags
+        let tags: [ScreenshotTag] = if let record, !record.tags.isEmpty {
+            record.tags
+        } else {
+            screenshot.tags.map { ScreenshotTag(value: $0, score: 1, sources: []) }
         }
-        return screenshot.tags.map { ScreenshotTag(value: $0, score: 1, sources: []) }
+        var shown: Set<String> = Set(displayCategories.map { $0.displayName.lowercased() })
+        if let app = record?.app ?? screenshot.app { shown.insert(app.lowercased()) }
+        return tags.filter { !shown.contains($0.value.lowercased()) }
     }
 
     private var entities: [ExtractedEntity] {
@@ -1231,6 +1239,10 @@ private struct InsightDrawer: View {
 
     private var quickAction: QuickAction? {
         QuickAction.suggest(categories: displayCategories, entities: entities)
+    }
+
+    private var detailEntities: [ExtractedEntity] {
+        QuickAction.details(categories: displayCategories, entities: entities, primary: quickAction)
     }
 
     private func perform(_ action: QuickAction) {
@@ -1261,6 +1273,8 @@ private struct InsightDrawer: View {
             similar = []
             jumpable = []
             isTextExpanded = false
+            isTextOpen = false
+            isSimilarOpen = false
             // Debounce while flicking through pages.
             try? await Task.sleep(for: .milliseconds(140))
             if Task.isCancelled { return }
@@ -1445,9 +1459,9 @@ private struct InsightDrawer: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                categoriesSection
-                tagsSection
+                // Collections are under the title (the pencil edits them): no second list here
                 entitiesSection
+                tagsSection
                 textSection
                 similarSection
             }
@@ -1461,42 +1475,12 @@ private struct InsightDrawer: View {
         .opacity(Double(min(1, progress * 1.4)))
     }
 
-    private var categoriesSection: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            HStack {
-                LabelsSectionHeader(title: Brand.Copy.Detail.categories, systemImage: "square.stack.3d.up.fill", tint: Palette.brand)
-                Spacer(minLength: 0)
-                Button {
-                    onEdit()
-                } label: {
-                    Label(Brand.Copy.Detail.edit, systemImage: "pencil")
-                }
-                .buttonStyle(.brand(.ghost, size: .compact))
-                .accessibilityLabel(Brand.Copy.Detail.editLabels)
-            }
-            if displayCategories.isEmpty {
-                Text(Brand.Copy.Detail.notSorted)
-                    .font(.dsCallout)
-                    .foregroundStyle(Palette.inkSecondary)
-            } else {
-                ChipFlowLayout(spacing: Space.xs, lineSpacing: Space.xs) {
-                    ForEach(displayCategories, id: \.self) { category in
-                        TagChip(category.displayName, systemImage: category.icon, tint: category.color)
-                    }
-                }
-            }
-        }
-    }
-
+    @ViewBuilder
     private var tagsSection: some View {
         let tags: [ScreenshotTag] = tagModels
-        return VStack(alignment: .leading, spacing: Space.sm) {
-            LabelsSectionHeader(title: Brand.Copy.Detail.tags, systemImage: "number", tint: Palette.info)
-            if tags.isEmpty {
-                Text(Brand.Copy.Detail.noTags)
-                    .font(.dsCallout)
-                    .foregroundStyle(Palette.inkSecondary)
-            } else {
+        if !tags.isEmpty {
+            VStack(alignment: .leading, spacing: Space.sm) {
+                LabelsSectionHeader(title: Brand.Copy.Detail.tags, systemImage: "number", tint: Palette.info)
                 ChipFlowLayout(spacing: Space.xs, lineSpacing: Space.xs) {
                     ForEach(tags, id: \.value) { tag in
                         TagChip(tag.value, systemImage: "number", tint: Palette.info, isSuggested: tag.isSuggested)
@@ -1509,17 +1493,19 @@ private struct InsightDrawer: View {
 
     @ViewBuilder
     private var entitiesSection: some View {
-        let items: [ExtractedEntity] = entities
+        let items: [ExtractedEntity] = detailEntities
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: Space.sm) {
                 LabelsSectionHeader(title: Brand.Copy.Detail.actions, systemImage: "bolt.fill", tint: Palette.warning)
-                ChipFlowLayout(spacing: Space.xs, lineSpacing: Space.xs) {
-                    ForEach(items, id: \.self) { entity in
-                        EntityChip(entity: entity) {
-                            perform(entity)
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element) { index, entity in
+                        if index > 0 {
+                            Divider().padding(.leading, 52)
                         }
+                        DetailRow(entity: entity, onOpen: { perform(entity) }, onCopy: { copy(entity) })
                     }
                 }
+                .dsSurface(radius: Radius.md)
             }
         }
     }
@@ -1529,19 +1515,24 @@ private struct InsightDrawer: View {
         let text: String = ocrText
         if !text.isEmpty {
             let isLong: Bool = text.count > 240 || text.filter { $0 == "\n" }.count > 5
+            let lineCount: Int = text.split(separator: "\n").count
             VStack(alignment: .leading, spacing: Space.sm) {
                 HStack {
-                    LabelsSectionHeader(title: Brand.Copy.Detail.text, systemImage: "text.viewfinder", tint: CategoryGroup.workProductivity.color)
-                    Spacer(minLength: 0)
-                    Button {
-                        copyText(text)
-                    } label: {
-                        Label(Brand.Copy.Detail.copy, systemImage: "doc.on.doc")
+                    CollapsibleHeader(title: Brand.Copy.Detail.text, systemImage: "text.viewfinder",
+                                      tint: CategoryGroup.workProductivity.color,
+                                      detail: Brand.Copy.Detail.lines(lineCount), isOpen: $isTextOpen)
+                    if isTextOpen {
+                        Button {
+                            copyText(text)
+                        } label: {
+                            Label(Brand.Copy.Detail.copy, systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(.brand(.ghost, size: .compact))
+                        .accessibilityLabel(Brand.Copy.Detail.copyText)
                     }
-                    .buttonStyle(.brand(.ghost, size: .compact))
-                    .accessibilityLabel(Brand.Copy.Detail.copyText)
                 }
 
+                if isTextOpen {
                 Text(text)
                     .font(.dsBody)
                     .foregroundStyle(Palette.ink)
@@ -1560,6 +1551,7 @@ private struct InsightDrawer: View {
                     }
                     .buttonStyle(.brand(.ghost, size: .compact))
                 }
+                }
             }
         }
     }
@@ -1568,7 +1560,9 @@ private struct InsightDrawer: View {
     private var similarSection: some View {
         if !similar.isEmpty {
             VStack(alignment: .leading, spacing: Space.sm) {
-                LabelsSectionHeader(title: Brand.Copy.Detail.similar, systemImage: "square.on.square", tint: Palette.brandSecondary)
+                CollapsibleHeader(title: Brand.Copy.Detail.similar, systemImage: "square.on.square",
+                                  tint: Palette.brandSecondary, detail: "\(similar.count)", isOpen: $isSimilarOpen)
+                if isSimilarOpen {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: Space.xs) {
                         ForEach(similar) { item in
@@ -1581,6 +1575,7 @@ private struct InsightDrawer: View {
                 }
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
+                }
             }
         }
     }
@@ -1648,42 +1643,97 @@ private struct InsightDrawer: View {
 
 // MARK: - Entity Chip
 
-private struct EntityChip: View {
+/// One detail worth acting on: tap to open it (Maps, the browser, a call), or copy it. Things that only copy
+/// (a code, a tracking number) copy on tap.
+private struct DetailRow: View {
     let entity: ExtractedEntity
-    let action: () -> Void
+    let onOpen: () -> Void
+    let onCopy: () -> Void
 
     var body: some View {
         let tint: Color = EntityStyle.tint(entity.type)
         let opens: Bool = EntityStyle.opensExternally(entity.type)
-        Button(action: action) {
-            HStack(spacing: Space.xxs + 2) {
-                Image(systemName: EntityStyle.icon(entity.type))
-                    .imageScale(.small)
-                    .foregroundStyle(tint)
-                Text(entity.value)
-                    .font(.dsCaption)
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: opens ? "arrow.up.right" : "doc.on.doc")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Palette.inkSecondary)
-            }
-            .padding(.horizontal, Space.sm)
-            .padding(.vertical, Space.xs)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(tint.opacity(0.16))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(tint.opacity(0.3), lineWidth: 1)
+        HStack(spacing: Space.sm) {
+            Button(action: opens ? onOpen : onCopy) {
+                HStack(spacing: Space.sm) {
+                    Image(systemName: EntityStyle.icon(entity.type))
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(tint.opacity(0.16)))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Brand.Copy.Detail.detailKind(entity.type))
+                            .font(.dsCaption)
+                            .foregroundStyle(Palette.inkSecondary)
+                        Text(entity.value)
+                            .font(.dsCallout)
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                     }
+                    Spacer(minLength: 0)
+                    if opens {
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Palette.inkSecondary)
+                    }
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Capsule(style: .continuous))
+            .buttonStyle(.pressableCard)
+            .accessibilityLabel(Brand.Copy.Detail.detailKind(entity.type) + ", " + entity.value)
+            .accessibilityHint(opens ? Brand.Copy.Detail.openHint : Brand.Copy.Detail.copyHint)
+
+            if opens {
+                Button(action: onCopy) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Palette.brand)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressableCard)
+                .accessibilityLabel(Brand.Copy.Detail.copyValue(Brand.Copy.Detail.detailKind(entity.type).lowercased()))
+            }
         }
-        .buttonStyle(.pressableCard)
-        .accessibilityLabel(entity.value)
-        .accessibilityHint(opens ? Brand.Copy.Detail.openHint : Brand.Copy.Detail.copyHint)
+        .padding(.leading, Space.sm)
+        .padding(.trailing, Space.xs)
+        .padding(.vertical, Space.xs)
+        .frame(minHeight: 52)
+    }
+}
+
+/// A section title that opens and closes what's under it, with a hint of what's inside ("42 lines", "6")
+private struct CollapsibleHeader: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let detail: String
+    @Binding var isOpen: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            HapticManager.shared.lightTap()
+            Motion.perform(Motion.snappy, reduceMotion: reduceMotion) { isOpen.toggle() }
+        } label: {
+            HStack(spacing: Space.xs) {
+                LabelsSectionHeader(title: title, systemImage: systemImage, tint: tint)
+                Text(detail)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.inkSecondary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Palette.inkSecondary)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isOpen ? Brand.Copy.Detail.collapse : Brand.Copy.Detail.expand)
     }
 }
 
