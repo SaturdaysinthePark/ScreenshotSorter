@@ -401,9 +401,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Screenshot Sorter";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Screenshot Sorter needs permission to help you manage screenshots, including the ability to delete ones you no longer need. All processing happens privately on your device.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Screenshot Sorter needs access to your photo library to find, organize, and help you review screenshots using on-device AI. Your photos never leave your device.";
+				INFOPLIST_KEY_CFBundleDisplayName = Stacks;
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Stacks needs permission to help you manage screenshots, including the ability to delete ones you no longer need. All processing happens privately on your device.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Stacks needs access to your photo library to find, organize, and help you review screenshots using on-device AI. Your photos never leave your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -433,9 +433,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Screenshot Sorter";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Screenshot Sorter needs permission to help you manage screenshots, including the ability to delete ones you no longer need. All processing happens privately on your device.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Screenshot Sorter needs access to your photo library to find, organize, and help you review screenshots using on-device AI. Your photos never leave your device.";
+				INFOPLIST_KEY_CFBundleDisplayName = Stacks;
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Stacks needs permission to help you manage screenshots, including the ability to delete ones you no longer need. All processing happens privately on your device.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Stacks needs access to your photo library to find, organize, and help you review screenshots using on-device AI. Your photos never leave your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

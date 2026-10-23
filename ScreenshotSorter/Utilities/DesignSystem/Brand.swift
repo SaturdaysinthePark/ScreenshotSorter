@@ -6,7 +6,7 @@ import Foundation
 /// Rename the app by changing `appName` (and `tagline`) below.
 
 enum Brand {
-    static let appName: String = "Screenshot Sorter"
+    static let appName: String = "Stacks"
     static let tagline: String = "Screenshots, sorted. Finally."
 
     /// "1 screenshot" / "3 screenshots"
