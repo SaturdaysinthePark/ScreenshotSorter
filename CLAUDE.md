@@ -1,7 +1,7 @@
 # ScreenshotSorter
 
 iOS 26-only SwiftUI app that sorts screenshots into categories with on-device AI, makes their
-text searchable and helps users clean up. Product name ("What the Screen?") is **not final** —
+text searchable and helps users clean up. Product name (working name "Screenshot Sorter") is **not final** —
 all user-facing copy and the name live in `ScreenshotSorter/Utilities/DesignSystem/Brand*.swift`.
 
 ## Build & test
