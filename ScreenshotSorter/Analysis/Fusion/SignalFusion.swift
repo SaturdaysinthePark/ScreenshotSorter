@@ -87,6 +87,8 @@ struct FusionConfig: Sendable {
     /// Plants and landscapes seen only by the image classifier inside an app's post are mostly the background of a
     /// café, a street or a book photo (1 right in 12 on a judged library)
     var visionOnlySceneInAppThreshold: Double = 0.7
+    /// Art, nature or plants seen only by the image classifier (and the model) on a feed post need this much
+    var feedImageOnlyThreshold: Double = 0.7
     /// Reliability of neighbour-propagated user corrections
     var knnReliability: Double = 0.9
     /// How strongly negative neighbour evidence suppresses a category
@@ -211,6 +213,26 @@ enum SignalFusion {
             selected.removeAll { item in
                 (item.category == .plants || item.category == .nature) && item.sources == .visionClassifier
                     && item.score < config.visionOnlySceneInAppThreshold
+            }
+        }
+        // On a feed post, what the picture shows in passing isn't the topic: a painting on a café wall, a plant by a
+        // window, someone's jeans. Judged on a whole library, image-only art/nature/plants under 0.7 were right 11–35%
+        // of the time, image-only clothes 17–33%, people without text 3 in 13.
+        let feeds: Set<ScreenshotCategory> = [.tiktok, .instagram, .reddit, .youtube, .twitter, .linkedin, .facebook]
+        if selected.contains(where: { feeds.contains($0.category) }) {
+            let imageOnly: LabelSource = [.visionClassifier, .foundationModel]
+            selected.removeAll { item in
+                guard !item.sources.contains(.user), !item.sources.contains(.userKNN) else { return false }
+                switch item.category {
+                case .art, .nature, .plants:
+                    return imageOnly.isSuperset(of: item.sources) && item.score < config.feedImageOnlyThreshold
+                case .clothes:
+                    return item.sources == .visionClassifier
+                case .people:
+                    return imageOnly.union(.faces).isSuperset(of: item.sources)
+                default:
+                    return false
+                }
             }
         }
         // Someone in the picture isn't what it's about (a creator talking, a model in an ad, an artist on a song

@@ -99,7 +99,7 @@ struct ScreenshotInsightResponse {
     @Guide(description: "Name of the app the screenshot was taken in, or an empty string if unclear")
     var app: String
 
-    @Guide(description: "A short, specific title of at most 8 words")
+    @Guide(description: "What it is, by name, at most 8 words: a book as Title – Author, a product as brand and name, a place by its name, a post by its subject. Not the app or the kind of screen")
     var title: String
 
     @Guide(description: "3 to 6 short lowercase search words: brands, products, places, dishes, names", .count(3...6))

@@ -68,13 +68,16 @@ enum AppSignatures {
         AppSignature(appID: "instagram", displayName: "Instagram", category: .instagram,
                      names: ["instagram"],
                      hosts: ["instagram.com"],
-                     phrases: ["liked by": 0.8, "view all comments": 0.75, "add a comment": 0.45, "suggested for you": 0.35,
+                     // "Suggested for you" was on 18 Instagram screens missed and no other app's on a judged library
+                     phrases: ["liked by": 0.8, "view all comments": 0.75, "add a comment": 0.45, "suggested for you": 0.7,
                                "reels": 0.35, "original audio": 0.55, "your story": 0.6, "follow back": 0.4,
                                "edit profile": 0.3, "share profile": 0.55,
                                // Stories: the reply bar, and the ad button over a sponsored story
                                "send message": 0.7, "expand story": 0.8],
                      // The real UI reads "View all 2,391 comments", so the phrase above rarely matches as-is
                      chrome: [.allOf(["view all", "comments"], weight: 0.75),
+                              // A story's reply bar, a shop profile
+                              .allOf(["send a message", "follow"], weight: 0.7), .allOf(["view shop", "follow"], weight: 0.7),
                               .zone(.topBar, anyOf: ["instagram"], weight: 0.75),
                               // A profile header (TikTok's says "Following · Followers · Likes", no "posts")
                               .allOf(["posts", "followers", "following"], weight: 0.8),
@@ -90,6 +93,8 @@ enum AppSignatures {
                                "people added": 0.5, "repost to followers": 0.7, "find similar": 0.4],
                      // X also says "For you · Following"; these combinations are TikTok's alone
                      chrome: [.zoneAllOf(.topBar, ["following", "for you"], weight: 0.4),
+                              // A comment sheet has no tab bar: its box and its reply threads ("View 4 replies")
+                              .allOf(["add comment", "replies"], weight: 0.85), .allOf(["add comment", "see original"], weight: 0.85),
                               .zoneAllOf(.bottomBar, ["friends", "inbox", "profile"], weight: 0.9),
                               .allOf(["following", "for you", "inbox"], weight: 0.85),
                               .allOf(["following", "for you", "shop"], weight: 0.8),

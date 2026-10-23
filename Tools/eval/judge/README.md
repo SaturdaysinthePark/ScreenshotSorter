@@ -82,6 +82,20 @@ python3 Tools/eval/judge/shelf_score.py build/phone/audit/verdicts.json build/ph
 Every shelf counts the same, the way someone browsing collections sees them. "lost" counts right members a change
 dropped; check it next to `score.py`, which measures recall.
 
+## 6. Every screenshot
+
+The thorough pass: contact sheets of the whole library, 8 per sheet, each tile showing collections, title, tags,
+the button and details as the viewer does. Reviewers write one JSON verdict per screenshot (wrong and missing
+collections, title good/meh/bad, noise tags, button right/wrong/missing/none-ok, detail noise). Then:
+
+```sh
+python3 Tools/eval/judge/full_review.py build/phone2/review build/phone2/notes.jsonl [build/phone2/rescore.jsonl]
+```
+
+With a re-score it also says what a change did against the verdicts (expected = shown − wrong + missing). Because
+every screenshot has a verdict, a rule can be tried in a few lines of Python on the OCR text before it's written in
+Swift: count how many it adds right and wrong.
+
 ## Results, October 2026 (iPhone 17 Pro, 1,938 screenshots, 229 judged)
 
 | | precision | recall | macro-F1 | exactly right |
@@ -109,3 +123,9 @@ one source was right 10 times in 45. So: weak words never label alone in most te
 a second topic needs two sources or 0.8, People inside an app needs a face and no other topic, product barcodes
 aren't codes, and a rule's negative terms veto the model too. The tuning corpus moved 0.873 → 0.877 and the
 held-out set 0.842 → 0.851 macro-F1.
+
+Whole library, every screenshot judged (1,938): collections all right 850 → 905, label precision 0.868 → 0.885,
+recall 0.685 → 0.705; noise tags 2,218 → 645; 29 wrong buttons removed, 14 changed to what reviewers suggested,
+none lost. Titles: the language model's were bad 15% of the time, the text fallback's 54% — so titles mostly improve
+as the model reaches every screenshot. A more specific title instruction brought the model's titles closer to the
+reviewers' (similarity 0.41 → 0.46 on 116) with its topics unchanged within noise (69 → 67 right).

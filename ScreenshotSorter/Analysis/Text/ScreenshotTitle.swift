@@ -25,7 +25,7 @@ enum ScreenshotTitle {
     }
 
     /// Half a sentence ("Your confirmation ID is", "Tag someone you'd"), a legend ("/ - Slide Up"), a greeting
-    private static func isFragment(_ text: String) -> Bool {
+    static func isFragment(_ text: String) -> Bool {
         let lowered = text.lowercased()
         if let first = text.unicodeScalars.first, !CharacterSet.alphanumerics.contains(first), !"@#\"'“(".unicodeScalars.contains(first) {
             return true
@@ -34,6 +34,12 @@ enum ScreenshotTitle {
         let uiPhrases = ["good morning", "good afternoon", "good evening", "good night", "followed by", "only 1 left",
                          "only 2 left", "free shipping", "event details", "update", "new arrivals", "sold out", "limited time"]
         if uiPhrases.contains(where: { lowered.hasPrefix($0) }) { return true }
+        // A time ("4 minutes ago"), hashtags, a search field ("Q Search for games…"), a button ("View Order Details"),
+        // a street on a map ("Kent Av", "LIVINGSTON-ST") or a handle ("kicks.costa.rica")
+        let patterns = [#"\b\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago\b"#, #"^#\w+(\s+#\w+)*$"#,
+                        #"^q\s+search"#, #"^(view|see|tap|show|upgrade|request|add|edit|manage)\b.{0,24}$"#,
+                        #"\b(st|av|ave|rd|blvd)\.?$"#, #"-st-?$"#, #"^[a-z0-9_]+(\.[a-z0-9_]+)+$"#]
+        if patterns.contains(where: { lowered.range(of: $0, options: .regularExpression) != nil }) { return true }
         let last = lowered.split { !$0.isLetter && $0 != "'" }.last.map(String.init) ?? ""
         return ["is", "the", "of", "to", "a", "an", "and", "for", "with", "by", "you'd", "your", "my", "in", "at", "on",
                 "or", "that", "this", "are", "was", "be"].contains(last)

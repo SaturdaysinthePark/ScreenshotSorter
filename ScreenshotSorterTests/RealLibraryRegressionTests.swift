@@ -127,12 +127,16 @@ struct RealLibraryRegressionTests {
         #expect(!labels(feed).contains(.email))
     }
 
-    @Test func faceLessPeopleInsideAnAppNeedsMoreEvidence() {
+    @Test func peopleInsideAFeedPostNeedsMoreThanAFace() {
         var input = FusionInput()
         input.apps = [AppMatch(appID: "tiktok", displayName: "TikTok", category: .tiktok, confidence: 0.95)]
         input.vision = [.people: 0.7]
         #expect(!SignalFusion.fuse(input).map(\.category).contains(.people))
+        // A creator's face on their own post isn't People either (right 3 times in 13 on a judged library)
         input.faces = FaceStats(count: 1, largestAreaFraction: 0.2, totalAreaFraction: 0.2)
+        #expect(!SignalFusion.fuse(input).map(\.category).contains(.people))
+        // Outside a feed, a face is: a selfie, a friend's photo
+        input.apps = []
         #expect(SignalFusion.fuse(input).map(\.category).contains(.people))
     }
 
@@ -227,5 +231,38 @@ struct RealLibraryRegressionTests {
         let insight = ModelInsight(primary: .recipes, secondary: [], confidence: 0.9, app: nil, title: "", summary: "",
                                    tags: [], sawImage: true)
         #expect(!labels(film, insight: insight).contains(.recipes))
+    }
+
+    // MARK: Found judging all 1,938 screenshots of a real library
+
+    @Test func feedPostsTheAppMissedBefore() {
+        let story = screen(["throwingfits", "Suggested for you", "Follow", "In the City", "Joan Silber"])
+        #expect(ScreenshotClassifier.classify(features: story, includeEntities: false).app?.appID == "instagram")
+        let comments = screen(["124 comments", "View 4 replies", "the best matcha in kyoto", "Add comment..."])
+        #expect(ScreenshotClassifier.classify(features: comments, includeEntities: false).app?.appID == "tiktok")
+    }
+
+    @Test func whatAFeedPostShowsInPassingIsNotItsTopic() {
+        var post = FusionInput()
+        post.apps = [tiktok]
+        post.vision = [.art: 0.65, .clothes: 0.8]
+        post.rules = [.books: 0.9]
+        let labels = SignalFusion.fuse(post).map(\.category)
+        #expect(labels.contains(.books) && !labels.contains(.art) && !labels.contains(.clothes))
+    }
+
+    @Test func foodAtAVenueIsAPlaceToo() {
+        let cafe = screen(["Following", "For You", "the cutest little cafe", "Thai tea latte and matcha latte",
+                           "Home", "Friends", "Inbox", "Profile"])
+        let result = labels(cafe)
+        #expect(result.contains(.drinks) && result.contains(.places))
+    }
+
+    @Test func tagsLeaveOutTheAppAndPassingObjects() {
+        let post = TestSupport.features(lines: [("Following", .topBar), ("For You", .topBar), ("Shop", .topBar),
+                                                ("lamp with ceramic base", .body)],
+                                        labels: [("jeans", 0.9), ("lamp", 0.9)])
+        let tags = ScreenshotClassifier.classify(features: post, includeEntities: false).tags.map(\.value)
+        #expect(!tags.contains("tiktok") && !tags.contains("jeans"))
     }
 }

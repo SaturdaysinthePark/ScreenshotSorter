@@ -21,8 +21,9 @@ enum PlaceCard {
         guard let directions = lines.firstIndex(where: { $0.lowercased() == "directions" }) else { return nil }
         for index in stride(from: directions - 1, through: max(0, directions - 5), by: -1) where isRating(lines[index]) {
             // The name sits right above the rating; a second line above it is a wrapped long name at most
-            for candidate in stride(from: index - 1, through: max(0, index - 2), by: -1) where isName(lines[candidate]) {
-                return lines[candidate]
+            for candidate in stride(from: index - 1, through: max(0, index - 2), by: -1) {
+                let name = cleaned(lines[candidate])
+                if isName(name) && !isCaption(name) { return name }
             }
             return nil
         }
@@ -112,11 +113,27 @@ enum PlaceCard {
         line.range(of: #"^[1-5][.,][0-9](\s|$|★|\*|\(|·)"#, options: .regularExpression) != nil
     }
 
+    /// "CRIA CAFÉ Cafés Especiais 4)", "Casa Pedregal 1": a badge or photo count read into the name
+    private static func cleaned(_ line: String) -> String {
+        line.replacingOccurrences(of: #"\s*\d\s*[)）]?$|\s*[)）]$"#, with: "", options: .regularExpression)
+    }
+
+    /// A creator's caption laid over a Maps card ("favorite temple", "UNIQLO was one of", "real. This place is a")
+    private static func isCaption(_ line: String) -> Bool {
+        if ScreenshotTitle.isFragment(line) || line.contains(". ") { return true }
+        // Lower case and three words or more is a sentence ("had so much stuff"); short lower-case names are real
+        // ("le gaz", "recess grove"); a stray letter in front is OCR of the caption's edge ("p Kebab")
+        let words = line.split(separator: " ")
+        guard line.first?.isLowercase ?? false else { return false }
+        return words.count >= 3 || (words.first?.count == 1)
+    }
+
     private static func isName(_ line: String) -> Bool {
         let letters = line.filter(\.isLetter).count
         guard (2...60).contains(line.count), letters >= 2 else { return false }
         // Not the status bar's clock or a search field
         if line.range(of: #"^\d{1,2}:\d{2}"#, options: .regularExpression) != nil { return false }
-        return !["search here", "search maps"].contains(line.lowercased())
+        // Nor a feed's own chrome showing through ("LIVE", "STEM")
+        return !["search here", "search maps", "live", "stem", "explore", "following", "for you", "shop"].contains(line.lowercased())
     }
 }

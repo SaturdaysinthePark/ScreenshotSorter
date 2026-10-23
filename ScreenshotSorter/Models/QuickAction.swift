@@ -40,19 +40,20 @@ struct QuickAction: Equatable, Sendable {
                                source: tracking)
         }
         // The card's name plus its address, unless the name line already carries it ("Nuar, 48 W 27th St")
+        let address = entities.first { $0.type == .address && isUsableAddress($0) }
         if let placeName {
             var query = placeName
-            if let address = first(.address)?.value, !placeName.localizedCaseInsensitiveContains(address) {
+            if let address = address?.value, !placeName.localizedCaseInsensitiveContains(address) {
                 query += ", " + address
             }
             if let url = mapsURL(for: query) {
                 return QuickAction(title: Brand.Copy.Detail.openInMaps, systemImage: "map.fill", kind: .open(url),
-                                   source: first(.address))
+                                   source: address)
             }
         }
         // An address, not a name the text tagger spotted: a city in a caption ("Day 6: Tokyo") isn't a place to go
         if !topics.isDisjoint(with: placeCategories),
-           let place = first(.address), let url = mapsURL(for: place.value) {
+           let place = address, let url = mapsURL(for: place.value) {
             return QuickAction(title: Brand.Copy.Detail.openInMaps, systemImage: "map.fill", kind: .open(url), source: place)
         }
         let links = entities.filter { $0.type == .url && isWorthOpening($0) }
@@ -98,6 +99,7 @@ struct QuickAction: Equatable, Sendable {
             // "Today", "SUNDAY", "12:00 PM - 2:30 PM", a countdown: not a day to remember
             case .date where !isCalendarDate(entity): continue
             case .url where !isWorthOpening(entity): continue
+            case .address where !isUsableAddress(entity): continue
             case .date where !dated: continue
             case .price where !billed: continue
             default: break
@@ -144,8 +146,36 @@ struct QuickAction: Equatable, Sendable {
             guard entity.type == .oneTimeCode else { return true }
             let value = entity.normalized ?? entity.value
             if value.count == 4, let year = Int(value), (1900...2099).contains(year) { return false }
+            // A four-digit number with only "promo code" or "postal code" nearby is a street number or a price
+            if value.count == 4 && value.allSatisfy(\.isNumber) {
+                return ["verification", "passcode", "security code", "one-time", "otp", "login code", "your code is"]
+                    .contains { lowered.contains($0) }
+            }
             return saysCode
         }
+    }
+
+    /// An address Maps can go to. Not a city ("Portland, Maine", "Brooklyn, NY 11222"), a street with no number
+    /// ("35th St"), or a caption in capitals ("3 FOOD SPOTS TO SAVE IN SEOUL"): judged wrong 40% of the time as buttons.
+    static func isUsableAddress(_ entity: ExtractedEntity) -> Bool {
+        let value = entity.value.replacingOccurrences(of: "\n", with: ", ").trimmingCharacters(in: .whitespaces)
+        guard value.contains(where: \.isNumber) else { return false }
+        if value.range(of: #"^[A-Za-z .'-]+,\s*[A-Z]{2}(\s+\d{5})?$"#, options: .regularExpression) != nil { return false }
+        if value.range(of: #"^\d+(st|nd|rd|th)\s+(st|street|ave|avenue|rd|road)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            return false
+        }
+        let letters = value.filter(\.isLetter)
+        let capitals = letters.filter(\.isUppercase).count
+        // "810 GRAND ST, BROOKLYN" is an address in capitals; "3 FOOD SPOTS TO SAVE IN SEOUL" is a caption
+        let startsWithNumber = value.range(of: #"^\d{1,5}[A-Za-z]?\s.*\b(st|street|ave|avenue|rd|road|blvd|dr|ln|way|pl|sq|pkwy|hwy)\b"#,
+                                           options: [.regularExpression, .caseInsensitive]) != nil
+        if !startsWithNumber && letters.count >= 12 && Double(capitals) / Double(letters.count) > 0.8
+            && value.split(separator: " ").count >= 4 {
+            return false
+        }
+        // Half a sentence ending "…the" or "…for" isn't an address either
+        let last = value.lowercased().split { !$0.isLetter }.last.map(String.init) ?? ""
+        return !["the", "of", "to", "a", "and", "for", "with", "is", "in", "at", "on"].contains(last)
     }
 
     private static let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
@@ -161,7 +191,10 @@ struct QuickAction: Equatable, Sendable {
     /// Platforms' own home pages, image credits' cut-off links and the like aren't worth a button or a row
     private static let platformHosts: Set<String> = ["instagram.com", "tiktok.com", "reddit.com", "x.com", "twitter.com",
                                                      "facebook.com", "youtube.com", "google.com", "drive.google.com",
-                                                     "linkedin.com", "maps.apple.com", "apple.com"]
+                                                     "linkedin.com", "maps.apple.com", "apple.com",
+                                                     // A directory's or receipt's home page isn't the thing on screen
+                                                     "tripadvisor.com", "archive.org", "squareup.com", "yelp.com",
+                                                     "opentable.com", "amazon.com", "docs.google.com", "spotify.com"]
 
     static func isWorthOpening(_ entity: ExtractedEntity) -> Bool {
         let raw = (entity.normalized ?? entity.value).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,6 +205,8 @@ struct QuickAction: Equatable, Sendable {
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         let hasPath = url.path().count > 1
         if platformHosts.contains(bare) && !hasPath { return false }
+        // Hotel and airport Wi-Fi sign-in pages
+        if ["guestinternet", "hotspot", "captive", "neverssl", "cppm", "wifi"].contains(where: { bare.contains($0) }) { return false }
         // A Wikipedia link without the article is just the site
         if bare.hasSuffix("wikipedia.org") && !hasPath { return false }
         // A domain needs a real-looking ending ("legaz.cafe" yes, "example.cor" no: OCR clipped it)

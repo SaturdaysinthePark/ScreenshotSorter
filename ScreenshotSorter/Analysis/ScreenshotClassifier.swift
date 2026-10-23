@@ -66,6 +66,26 @@ enum ScreenshotClassifier {
     /// When rules and Vision found no topic inside an app (a TikTok post is just "TikTok"), a text-only "sure"
     /// answer fills the gap: right ~3 in 4 there. Not for the topics the model falls back on when it has no idea.
     static let modelGapScore = 0.55
+    /// Tags judged noise ≥60% of the times they appeared on a whole library: objects seen in passing, words that
+    /// describe the screenshot rather than what's on it
+    static let noiseTags: Set<String> = [
+        "plate", "musical instrument", "string instrument", "drinking glass", "jeans", "eyeglasses", "shop", "frame",
+        "suit", "grass", "map", "bowl", "tool", "luggage", "baseball hat", "rocks", "arch", "video", "profile", "door",
+        "stairs", "search", "person", "branch", "man", "wood natural", "path", "brand", "carton", "hashtag", "armchair",
+        "bottle", "collection", "location", "dish", "interior shop", "shrub", "curtain", "time", "microphone", "guide",
+        "song", "character", "green screen", "green", "chopsticks", "building", "night sky", "story", "cover", "price",
+        "road", "housewares", "fire", "handwriting", "machine", "clothing", "screenshot", "app", "post", "social media"
+    ]
+    /// Every known app's name ("tiktok", "maps", "amazon"): the source is shown, not tagged
+    static let appNames: Set<String> = Set(AppSignatures.all.map { normalizeTag($0.displayName) })
+        .union(["maps", "google maps", "amazon", "safari", "whatsapp", "slack", "x", "twitter"])
+    /// A place tag on the post, or a kind of venue named, makes food or drinks a place too
+    static let venueTerms: [String] = [
+        "posted about this place", "featured this place", "posts of this place", "shared related posts", "discover more",
+        "cafe", "cafes", "coffee shop", "coffeehouse", "restaurant", "bistro", "bakery", "bar", "izakaya", "omakase",
+        "tea house", "teahouse", "eatery", "diner", "pizzeria", "taqueria", "food hall", "market", "spot", "spots"
+    ].map(TextNormalizer.normalizeTerm)
+    static let venuePlaceScore = 0.6
     /// Its fallback picks when unsure, even with the image (on a real iPhone 17 Pro, iOS 27: events ~5/12 right,
     /// orders 0/3, documents 1/3, against ~45/48 for everything else). These always need another source to agree.
     static let modelFallbackTopics: Set<ScreenshotCategory> = [.events, .receipts, .codes, .documents, .orders, .other]
@@ -156,6 +176,13 @@ enum ScreenshotClassifier {
             categories.removeAll { $0.category == .other || $0.category == primary }
             categories.append(ScoredCategory(category: primary, score: modelGapScore, sources: .foundationModel))
         }
+        // Food or drinks at a venue is somewhere to go too: a post tagged with a place, or naming a café, bar or
+        // market. Right 69 times in 80 on a judged library, where these lacked Places 202 times.
+        if categories.contains(where: { $0.category == .food || $0.category == .drinks }),
+           !categories.contains(where: { $0.category == .places }), user.overrides[.places] != false,
+           ScreenshotClassifier.venueTerms.contains(where: { text.contains(normalized: $0) }) {
+            categories.append(ScoredCategory(category: .places, score: venuePlaceScore, sources: .ocrRules))
+        }
 
         let entities: [ExtractedEntity]
         if let precomputedEntities {
@@ -211,7 +238,8 @@ enum ScreenshotClassifier {
 
         func add(_ raw: String, _ score: Double, _ source: LabelSource) {
             let value = normalizeTag(raw)
-            guard value.count >= 2, value.count <= 32, !user.removedTags.contains(value) else { return }
+            guard value.count >= 2, value.count <= 32, !user.removedTags.contains(value),
+                  source == .user || !(noiseTags.contains(value) || appNames.contains(value)) else { return }
             if let existing = byValue[value] {
                 byValue[value] = ScreenshotTag(value: value,
                                                score: max(existing.score, score),
@@ -221,8 +249,7 @@ enum ScreenshotClassifier {
             }
         }
 
-        if let app { add(app.displayName, app.confidence, .appDetector) }
-        if let modelApp = knownApp(insight?.app) { add(modelApp, 0.6, .foundationModel) }
+        // No tag for the app: it's the screenshot's source, shown under the title and filterable in search
         let scale = visionScale(lineCount: features.lines.filter { $0.zone != .statusBar }.count)
         for (label, confidence) in VisionLabelMap.tags(for: features.labels, scale: scale) {
             add(label, confidence, .visionClassifier)

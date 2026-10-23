@@ -97,6 +97,22 @@ struct QuickActionTests {
         #expect(PlaceCard.name(in: ["Embajada de", "OSSO San Isidro", "Overview", "Menu", "Reviews"]) == "OSSO San Isidro")
     }
 
+    @Test func mapsNeedsSomewhereToGo() {
+        for city in ["Portland, Maine", "Brooklyn, NY 11222", "35th St", "3 FOOD SPOTS TO SAVE IN SEOUL"] {
+            #expect(QuickAction.suggest(categories: [.places], entities: [entity(.address, city)]) == nil)
+        }
+        for address in ["40 W 27th St", "810 GRAND ST, BROOKLYN, NY 11211", "R. João Moura, 257 - Pinheiros"] {
+            #expect(QuickAction.suggest(categories: [.places], entities: [entity(.address, address)])?.title == Brand.Copy.Detail.openInMaps)
+        }
+        // A caption over the card, a badge in the name
+        #expect(PlaceCard.name(in: ["UNIQLO was one of", "4.2", "Directions"]) == nil)
+        #expect(PlaceCard.name(in: ["Casa Pedregal 1", "4.6", "Directions"]) == "Casa Pedregal")
+        #expect(PlaceCard.name(in: ["le gaz", "4.5", "Directions"]) == "le gaz")
+        // Wi-Fi sign-in pages and directory home pages aren't worth opening
+        #expect(!QuickAction.isWorthOpening(entity(.url, "secure.guestinternet.com")))
+        #expect(!QuickAction.isWorthOpening(entity(.url, "tripadvisor.com")))
+    }
+
     @Test func oneTimeCodeWinsEverywhere() {
         let action = QuickAction.suggest(categories: [.notifications], entities: [entity(.url, "bank.com"), entity(.oneTimeCode, "335543")])
         #expect(action?.kind == .copy("335543"))
